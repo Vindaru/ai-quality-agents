@@ -1,0 +1,224 @@
+# Golden set for the Failure-Triage agent: 48 synthetic, hand-labeled test failures,
+# 12 per category. Hostnames use the reserved .test TLD; member values are fake.
+failures:
+  # ---------------------------------------------------------------- environment
+  - id: F01
+    label: environment
+    test_name: test_send_referral_sms
+    error: "requests.exceptions.HTTPError: 503 Server Error: Service Unavailable for url: https://sms-gateway.test/v1/messages"
+    logs: ["2026-03-01T10:00:01Z WARN sms-gateway health check failing"]
+  - id: F02
+    label: environment
+    test_name: test_member_lookup_by_id
+    error: "psycopg2.OperationalError: could not connect to server: Connection refused"
+    stack: "File tests/api/test_members.py, line 22, in test_member_lookup_by_id"
+  - id: F03
+    label: environment
+    test_name: test_create_food_bank_referral
+    error: "HTTPError: 504 Gateway Timeout from referral-service.test"
+  - id: F04
+    label: environment
+    test_name: test_translation_of_template
+    error: "requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='translate.test', port=443): Read timed out. (read timeout=10)"
+  - id: F05
+    label: environment
+    test_name: test_spanish_outreach_voice
+    error: "socket.gaierror: [Errno -2] Name or service not known: 'voice-provider.test'"
+  - id: F06
+    label: environment
+    test_name: test_email_unsubscribe_link
+    error: "ssl.SSLCertVerificationError: certificate verify failed: certificate has expired"
+    logs: ["staging TLS certificate rotation job did not run"]
+  - id: F07
+    label: environment
+    test_name: test_export_outreach_report
+    error: "OSError: [Errno 28] No space left on device: '/tmp/report.csv'"
+  - id: F08
+    label: environment
+    test_name: test_referral_status_webhook
+    error: "HTTPError: 502 Bad Gateway"
+    logs: ["ingress: upstream referral-service not ready"]
+  - id: F09
+    label: environment
+    test_name: test_inbound_sms_routing
+    error: "Error: read ECONNRESET"
+    stack: "at TLSSocket.onConnectEnd (node:_tls_wrap)"
+  - id: F10
+    label: environment
+    test_name: test_outreach_event_published
+    error: "kafka.errors.NoBrokersAvailable: NoBrokersAvailable"
+    logs: ["event bus container restarting"]
+  - id: F11
+    label: environment
+    test_name: test_bulk_campaign_10000_members
+    error: "worker exited unexpectedly"
+    logs: ["pod campaign-worker-2 OOMKilled", "container restarted during test run"]
+  - id: F12
+    label: environment
+    test_name: test_referral_search_by_zip
+    error: "AssertionError: expected status 200 but got 503"
+    logs: ["search-service: Service Unavailable (maintenance window)"]
+
+  # ---------------------------------------------------------------- automation_issue
+  - id: F13
+    label: automation_issue
+    test_name: test_submit_referral_form_ui
+    error: "selenium.common.exceptions.NoSuchElementException: Unable to locate element: #referral-submit"
+  - id: F14
+    label: automation_issue
+    test_name: test_edit_member_language_ui
+    error: "selenium.common.exceptions.StaleElementReferenceException: element is not attached to the page document"
+  - id: F15
+    label: automation_issue
+    test_name: test_send_sms_from_console
+    error: "TimeoutError: locator.click: Timeout 30000ms exceeded."
+    logs: ["waiting for locator('button#send-sms')"]
+  - id: F16
+    label: automation_issue
+    test_name: test_open_referral_details
+    error: "ElementClickInterceptedException: element click intercepted: Other element would receive the click: <div class='toast'>"
+  - id: F17
+    label: automation_issue
+    test_name: test_preferences_toggle
+    error: "ElementNotInteractableException: element not interactable"
+  - id: F18
+    label: automation_issue
+    test_name: test_template_preview_ui
+    error: "AttributeError: 'NoneType' object has no attribute 'click'"
+    stack: "File pages/template_editor.py, line 41, in open_preview"
+  - id: F19
+    label: automation_issue
+    test_name: test_member_api_contract
+    error: "fixture 'member_api_client' not found"
+    stack: "available fixtures: cache, capsys, member_client, monkeypatch"
+  - id: F20
+    label: automation_issue
+    test_name: test_send_sms_helper
+    error: "TypeError: send_sms() missing 1 required positional argument: 'language'"
+    stack: "File tests/helpers/sms.py, line 12, in send_sms"
+  - id: F21
+    label: automation_issue
+    test_name: test_referral_list_count
+    error: "AssertionError: assert 2 == 3"
+    logs: ["passed on retry 2 of 3", "marked flaky in last 5 runs"]
+  - id: F22
+    label: automation_issue
+    test_name: test_member_table_loads
+    error: "TimeoutError: waiting for selector \"[data-test=member-row]\" failed: timeout 15000ms exceeded"
+  - id: F23
+    label: automation_issue
+    test_name: test_filter_by_language_ui
+    error: "selenium.common.exceptions.InvalidSelectorException: invalid selector: An invalid or illegal selector was specified"
+  - id: F24
+    label: automation_issue
+    test_name: test_referral_page_title
+    error: "ImportError: cannot import name 'ReferralPage' from 'pages.referral'"
+
+  # ---------------------------------------------------------------- test_data
+  - id: F25
+    label: test_data
+    test_name: test_vietnamese_template_selected
+    error: "LookupError: seed data missing: no member with language 'vi' in the test dataset"
+  - id: F26
+    label: test_data
+    test_name: test_create_member
+    error: "psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint \"members_pkey\""
+  - id: F27
+    label: test_data
+    test_name: test_link_referral_to_screening
+    error: "sqlite3.IntegrityError: FOREIGN KEY constraint failed"
+  - id: F28
+    label: test_data
+    test_name: test_referral_created_for_housing_need
+    error: "AssertionError: expected 1 referral for the synthetic member, found 0"
+    logs: ["seed job skipped: fixtures/members.json was not loaded"]
+  - id: F29
+    label: test_data
+    test_name: test_member_factory_from_file
+    error: "KeyError: 'preferred_language'"
+    stack: "File tests/conftest.py, line 30, in load_member_fixture"
+  - id: F30
+    label: test_data
+    test_name: test_member_profile_api
+    error: "HTTPError: 404 Not Found for url: /members/MBR-900404"
+    logs: ["test member not found in this environment"]
+  - id: F31
+    label: test_data
+    test_name: test_bulk_import_members
+    error: "ValueError: invalid phone number '555-01' in test data row 14"
+  - id: F32
+    label: test_data
+    test_name: test_outreach_allowed_with_consent
+    error: "AssertionError: consent expired for the synthetic member (consent_end in 2020)"
+  - id: F33
+    label: test_data
+    test_name: test_spanish_referral_journey
+    error: "RuntimeError: no test member available for scenario 'spanish_referral'"
+  - id: F34
+    label: test_data
+    test_name: test_import_spanish_members
+    error: "FileNotFoundError: fixture file data/members_es.csv not found"
+  - id: F35
+    label: test_data
+    test_name: test_create_referral_external_id
+    error: "IntegrityError: duplicate key value violates unique constraint \"referrals_external_id_key\""
+  - id: F36
+    label: test_data
+    test_name: test_food_banks_near_zip
+    error: "AssertionError: expected 3 food banks for ZIP 00000, found 0"
+    logs: ["reference table community_services is empty in this environment"]
+
+  # ---------------------------------------------------------------- product_bug
+  - id: F37
+    label: product_bug
+    test_name: test_create_referral_api
+    error: "requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: /referrals"
+    logs: ["NullPointerException in ReferralService.create"]
+  - id: F38
+    label: product_bug
+    test_name: test_referral_status_after_send
+    error: "AssertionError: expected status SENT but was FAILED"
+  - id: F39
+    label: product_bug
+    test_name: test_spanish_member_gets_spanish_sms
+    error: "AssertionError: SMS language 'en' != expected 'es' for a Spanish-speaking member"
+  - id: F40
+    label: product_bug
+    test_name: test_stop_reply_sets_opt_out
+    error: "AssertionError: assert False is True"
+    stack: "assert response.json()['sms_opt_out'] is True"
+  - id: F41
+    label: product_bug
+    test_name: test_referral_search_handler
+    error: "HTTP 500 returned by /search"
+    logs: ["KeyError 'zip' in referral_search handler"]
+  - id: F42
+    label: product_bug
+    test_name: test_invalid_phone_rejected
+    error: "AssertionError: expected 422 for an invalid phone number, got 200"
+  - id: F43
+    label: product_bug
+    test_name: test_screening_resubmit_idempotent
+    error: "AssertionError: duplicate referral created: expected 1, found 2"
+  - id: F44
+    label: product_bug
+    test_name: test_email_contains_unsubscribe
+    error: "AssertionError: unsubscribe link missing from the email body"
+  - id: F45
+    label: product_bug
+    test_name: test_distance_sorting
+    error: "Internal Server Error"
+    stack: "ZeroDivisionError: division by zero in distance.py, line 18"
+  - id: F46
+    label: product_bug
+    test_name: test_console_masks_phone
+    error: "AssertionError: console shows the full phone number (555) 010-0110 instead of the masked value"
+  - id: F47
+    label: product_bug
+    test_name: test_call_retry_limit
+    error: "AssertionError: retry count was 5, expected at most 3"
+  - id: F48
+    label: product_bug
+    test_name: test_referral_complete_callback
+    error: "HTTP 500 Internal Server Error from /referrals/complete"
+    logs: ["upstream partner callback: connection reset by peer while handling error"]

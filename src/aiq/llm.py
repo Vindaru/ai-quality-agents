@@ -189,3 +189,29 @@ def _mock_test_generation(system: str, prompt: str) -> str:
                 }
             )
     return json.dumps({"scenarios": scenarios})
+
+
+_TRIAGE_KEYWORDS: dict[str, list[str]] = {
+    "product_bug": ["expected", "but was", "assert", "!=", "500", "incorrect"],
+    "automation_issue": ["selector", "locator", "element", "stale", "flaky", "click", "retry"],
+    "environment": [
+        "timeout",
+        "connection",
+        "unavailable",
+        "dns",
+        "certificate",
+        "space left",
+        "oom",
+    ],
+    "test_data": ["seed", "fixture", "not found", "missing", "duplicate", "expired", "test data"],
+}
+
+
+@mock_behavior("failure_triage")
+def _mock_failure_triage(system: str, prompt: str) -> str:
+    text = json.dumps(input_payload(prompt)).casefold()
+    hits = {cat: [k for k in kws if k in text] for cat, kws in _TRIAGE_KEYWORDS.items()}
+    category = max(hits, key=lambda c: len(hits[c]))  # ties go to the first category
+    total = sum(len(v) for v in hits.values())
+    confidence = round(len(hits[category]) / total, 2) if total else 0.25
+    return json.dumps({"category": category, "confidence": confidence, "evidence": hits[category]})
