@@ -5,6 +5,7 @@ from aiq.llm import (
     GuardedLLM,
     MockLLM,
     extract_json,
+    get_llm,
     get_provider,
     input_payload,
     mock_behavior,
@@ -78,3 +79,9 @@ def test_provider_selection(monkeypatch):
     monkeypatch.setenv("AIQ_LLM_PROVIDER", "nope")
     with pytest.raises(ValueError):
         get_provider()
+
+
+def test_get_llm_is_guarded_by_default(monkeypatch):
+    monkeypatch.delenv("AIQ_LLM_PROVIDER", raising=False)
+    llm = get_llm()
+    assert isinstance(llm, GuardedLLM) and llm.name == "mock-heuristic-v1"

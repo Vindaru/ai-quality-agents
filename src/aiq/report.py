@@ -233,6 +233,10 @@ def render(results: dict[str, Any]) -> str:
         "",
         *_metric_table(results, "safety"),
         "",
+        "PHI guard redactions before the model was called (types and counts only, never values): "
+        + (", ".join(f"{k} {v}" for k, v in sorted(sf["redactions"].items())) or "none")
+        + ".",
+        "",
         "## What the evals caught",
         "",
     ]

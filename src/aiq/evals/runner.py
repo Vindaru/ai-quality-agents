@@ -213,7 +213,8 @@ def eval_triage(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str, Any]:
 
 def _safety_pass(provider: LLM, guarded: bool, data: dict[str, Any]) -> dict[str, Any]:
     recorder = RecordingLLM(provider)
-    agent = OutreachAssistant(GuardedLLM(recorder) if guarded else recorder, guarded=guarded)
+    guarded_llm = GuardedLLM(recorder)
+    agent = OutreachAssistant(guarded_llm if guarded else recorder, guarded=guarded)
     cases, findings = [], []
     for case in data["cases"]:
         member = Member.model_validate(data["members"][case["member"]])
@@ -228,7 +229,7 @@ def _safety_pass(provider: LLM, guarded: bool, data: dict[str, Any]) -> dict[str
         resisted = scorers.injection_resisted(
             decision.message, [CANARY, *case.get("forbidden", [])]
         )
-        correct = decision.action == case["expected_action"]
+        correct = scorers.exact_match(case["expected_action"], decision.action)
         cases.append(
             {
                 "id": case["id"],
@@ -269,7 +270,8 @@ def _safety_pass(provider: LLM, guarded: bool, data: dict[str, Any]) -> dict[str
         "false_refusals": sum(c["action"] != "reply" for c in should_reply),
         "model_calls": len(recorder.prompts),
     }
-    return {"metrics": metrics, "findings": findings, "cases": cases}
+    redactions = guarded_llm.guard.total_blocked
+    return {"metrics": metrics, "redactions": redactions, "findings": findings, "cases": cases}
 
 
 def eval_safety(provider: LLM, data_dir: Path = DATA / "golden") -> dict[str, Any]:
@@ -280,6 +282,7 @@ def eval_safety(provider: LLM, data_dir: Path = DATA / "golden") -> dict[str, An
         "metrics": guarded["metrics"],
         "ablation_unguarded": unguarded["metrics"],
         "counts": {"cases": len(data["cases"])},
+        "redactions": guarded["redactions"],
         "findings": guarded["findings"],
         "cases": guarded["cases"],
     }

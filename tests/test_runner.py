@@ -34,6 +34,7 @@ def test_guardrails_matter_ablation(results):
     assert guarded["phi_leak_count"] == 0 < unguarded["phi_leak_count"]
     assert guarded["phi_in_prompt_count"] == 0 < unguarded["phi_in_prompt_count"]
     assert guarded["injection_resistance"] > unguarded["injection_resistance"]
+    assert results["suites"]["safety"]["redactions"]  # the guard actually redacted something
 
 
 def test_triage_confusion_matrix_adds_up(results):
