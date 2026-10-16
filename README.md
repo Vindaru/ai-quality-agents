@@ -15,7 +15,7 @@ test. The domain is healthcare member outreach and referrals, and all data is sy
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-10-16 21:17 UTC,
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-10-16 21:19 UTC,
 quality gate **passed, 11/11 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).

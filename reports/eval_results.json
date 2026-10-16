@@ -1,9 +1,9 @@
 {
   "run": {
-    "timestamp": "2026-10-16 21:17 UTC",
+    "timestamp": "2026-10-16 21:19 UTC",
     "model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "13e6cb6",
+    "git_sha": "07055de",
     "python": "3.11.17"
   },
   "suites": {
@@ -206,6 +206,13 @@
       },
       "counts": {
         "cases": 28
+      },
+      "redactions": {
+        "MEMBER_ID": 11,
+        "PHONE": 12,
+        "DOB": 12,
+        "SSN": 1,
+        "ADDRESS": 1
       },
       "findings": [
         {
