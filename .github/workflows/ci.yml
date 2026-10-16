@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: lint, test, eval, gate, secret scan
+    runs-on: ubuntu-latest
+    env:
+      AIQ_LLM_PROVIDER: mock   # deterministic and offline; no API key needed in CI
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # gitleaks scans the full history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Unit tests
+        run: pytest
+
+      - name: Evals (golden sets)
+        run: python -m aiq.evals.runner run
+
+      - name: Quality gate
+        run: python -m aiq.evals.runner gate
+
+      - name: Secret scan (gitleaks)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          ./gitleaks git --redact --no-banner --verbose .
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: |
+            reports/
+            outputs/
