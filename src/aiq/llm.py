@@ -1,0 +1,127 @@
+"""Model access for the agents.
+
+* ``LLM`` is the one interface every agent depends on.
+* ``MockLLM`` is a deterministic, offline stand-in so CI never needs a key. It is a
+  simple heuristic "model" with realistic blind spots; the evals measure those blind
+  spots exactly as they would measure a real model's.
+* ``AnthropicLLM`` is used only when ``AIQ_LLM_PROVIDER=anthropic``.
+* ``GuardedLLM`` puts the PHI guard in front of whichever model is configured, so no
+  agent can send unredacted text to a provider.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from collections.abc import Callable
+from typing import Any, Protocol
+
+from aiq.guards.phi_guard import PhiGuard
+
+DEFAULT_MODEL = "claude-opus-5-5"
+
+
+class LLM(Protocol):
+    name: str
+
+    def complete(self, system: str, prompt: str, *, task: str) -> str:
+        """Return the model's raw text answer. ``task`` lets the mock pick a behavior."""
+        ...
+
+
+def extract_json(text: str) -> Any:
+    """Parse the first JSON object or array in ``text`` (tolerates code fences and prose)."""
+    starts = [i for i in (text.find("{"), text.find("[")) if i != -1]
+    if not starts:
+        raise ValueError("no JSON found in model output")
+    value, _ = json.JSONDecoder().raw_decode(text[min(starts) :])
+    return value
+
+
+def input_payload(prompt: str) -> dict[str, Any]:
+    """Agents wrap their structured input in <input>...</input>; the mock reads it back."""
+    match = re.search(r"<input>(.*?)</input>", prompt, re.DOTALL)
+    if not match:
+        raise ValueError("prompt has no <input> block")
+    return json.loads(match.group(1))
+
+
+MockHandler = Callable[[str, str], str]
+
+
+class MockLLM:
+    """Deterministic offline model. Same prompt in, same text out, every time."""
+
+    name = "mock-heuristic-v1"
+    handlers: dict[str, MockHandler] = {}
+
+    def complete(self, system: str, prompt: str, *, task: str) -> str:
+        try:
+            handler = self.handlers[task]
+        except KeyError as exc:
+            raise ValueError(f"MockLLM has no behavior for task {task!r}") from exc
+        return handler(system, prompt)
+
+
+def mock_behavior(task: str) -> Callable[[MockHandler], MockHandler]:
+    """Register the mock's behavior for one task."""
+
+    def register(fn: MockHandler) -> MockHandler:
+        MockLLM.handlers[task] = fn
+        return fn
+
+    return register
+
+
+class AnthropicLLM:
+    """Real provider via the official SDK. Reads ANTHROPIC_API_KEY from the environment."""
+
+    def __init__(self, model: str) -> None:
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Install the extra first: pip install -e '.[anthropic]'") from exc
+        self._client = anthropic.Anthropic()
+        self.name = model
+
+    def complete(self, system: str, prompt: str, *, task: str) -> str:  # pragma: no cover
+        response = self._client.messages.create(
+            model=self.name,
+            max_tokens=8000,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"effort": "low"},
+        )
+        if response.stop_reason == "refusal":
+            return ""  # agents treat an empty answer as an invalid response
+        return "".join(block.text for block in response.content if block.type == "text")
+
+
+class GuardedLLM:
+    """Redacts PHI from system prompt and user prompt before delegating."""
+
+    def __init__(self, inner: LLM, guard: PhiGuard | None = None) -> None:
+        self.inner = inner
+        self.guard = guard or PhiGuard()
+        self.name = inner.name
+
+    def complete(self, system: str, prompt: str, *, task: str) -> str:
+        return self.inner.complete(
+            self.guard.redact(system).text, self.guard.redact(prompt).text, task=task
+        )
+
+
+def get_provider() -> LLM:
+    """The configured model *without* the guard (used by evals to measure the guard)."""
+    provider = os.getenv("AIQ_LLM_PROVIDER", "mock").strip().lower()
+    if provider == "mock":
+        return MockLLM()
+    if provider == "anthropic":
+        return AnthropicLLM(os.getenv("AIQ_LLM_MODEL", DEFAULT_MODEL))
+    raise ValueError(f"Unknown AIQ_LLM_PROVIDER {provider!r} (expected 'mock' or 'anthropic')")
+
+
+def get_llm() -> GuardedLLM:
+    """The configured model with the PHI guard in front. Agents should use this."""
+    return GuardedLLM(get_provider())
