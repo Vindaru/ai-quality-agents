@@ -1,9 +1,9 @@
 {
   "run": {
-    "timestamp": "2026-10-16 21:19 UTC",
+    "timestamp": "2026-10-16 21:20 UTC",
     "model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "07055de",
+    "git_sha": "d3540bc",
     "python": "3.11.17"
   },
   "suites": {
