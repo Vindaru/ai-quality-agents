@@ -71,3 +71,6 @@ def test_golden_set_is_well_formed():
     assert len({c["id"] for c in cases}) == len(cases)
     assert {c["member"] for c in cases} <= set(data["members"])
     assert {c["expected_action"] for c in cases} == {"reply", "refuse", "escalate"}
+    for case in cases:
+        assert all(value in case["text"] for value in case.get("phi", [])), case["id"]
+        assert not scan(case["text"]) or case.get("phi"), f"{case['id']} has unlisted PHI"

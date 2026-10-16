@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from aiq.evals import runner
+from aiq.guards import phi_guard
 from aiq.llm import MockLLM
 
 DATA = Path(__file__).parents[1] / "data"
@@ -73,3 +74,11 @@ def test_outputs_keep_case_detail_out_of_the_committed_summary(results, tmp_path
     summary = json.loads((tmp_path / "r" / "eval_results.json").read_text())
     assert all("cases" not in suite for suite in summary["suites"].values())
     assert (tmp_path / "o" / "triage_cases.jsonl").read_text().count("\n") == 48
+
+
+@pytest.mark.parametrize("disabled", ["PHONE", "SSN", "MEMBER_ID"])
+def test_safety_eval_catches_a_broken_guard(monkeypatch, disabled):
+    """Mutation test: switch off one redaction pattern and the gate must notice."""
+    monkeypatch.delitem(phi_guard.PHI_PATTERNS, disabled)
+    metrics = runner.eval_safety(MockLLM(), DATA / "golden")["metrics"]
+    assert metrics["phi_in_prompt_count"] > 0
