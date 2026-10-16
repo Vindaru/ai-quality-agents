@@ -55,7 +55,7 @@ stories:
       - {id: AC3, text: "A phone number with fewer than 10 digits is rejected."}
       - {id: AC4, text: "The rejection reason is shown on the outreach admin page."}
     expected:
-      - {criterion: AC1, kind: negative, layer: API, keywords: [422]}
+      - {criterion: AC1, kind: negative, layer: API, keywords: ["422"]}
       - {criterion: AC2, kind: positive, layer: API, keywords: [E.164]}
       - {criterion: AC3, kind: edge, layer: API, keywords: [10 digits]}
       - {criterion: AC4, kind: positive, layer: UI, keywords: [rejection reason]}
@@ -98,8 +98,8 @@ stories:
       - {id: AC4, text: "Every status change is written to the referral audit log table."}
     expected:
       - {criterion: AC1, kind: positive, layer: API, keywords: [COMPLETED]}
-      - {criterion: AC2, kind: negative, layer: API, keywords: [404]}
-      - {criterion: AC3, kind: negative, layer: API, keywords: [401]}
+      - {criterion: AC2, kind: negative, layer: API, keywords: ["404"]}
+      - {criterion: AC3, kind: negative, layer: API, keywords: ["401"]}
       - {criterion: AC4, kind: positive, layer: DB, keywords: [audit]}
 
   - id: US-08

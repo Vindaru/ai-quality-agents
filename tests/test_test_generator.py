@@ -93,3 +93,6 @@ def test_golden_set_is_well_formed():
         story = Story.model_validate(raw)
         ids = {c.id for c in story.acceptance_criteria}
         assert {e["criterion"] for e in raw["expected"]} <= ids
+        for exp in raw["expected"]:
+            assert exp["kind"] in {"positive", "negative", "edge"}
+            assert all(isinstance(k, str) for k in exp["keywords"]), exp
