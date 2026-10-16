@@ -125,3 +125,67 @@ def get_provider() -> LLM:
 def get_llm() -> GuardedLLM:
     """The configured model with the PHI guard in front. Agents should use this."""
     return GuardedLLM(get_provider())
+
+
+# --- mock behaviors -------------------------------------------------------------------------
+# Each behavior is a small heuristic standing in for a model. They are intentionally
+# imperfect in the ways real models are (missed edge cases, wrong labels, an invented
+# enum value) so that the evals have something real to catch.
+
+_NEGATIVE_HINT = re.compile(
+    r"\b(invalid|unsupported|reject\w*|not|never|no|fails?|missing|without|expired|stop)\b", re.I
+)
+_EDGE_HINT = re.compile(
+    r"\b(within|at most|at least|more than|less than|limit|maximum|minimum)\b"
+    r"|\b\d[\d,]* (?:hours?|days?|minutes?|characters?|attempts?)\b",
+    re.I,
+)
+_DB_HINT = re.compile(r"\b(stored|recorded|persisted|saved|audit|table|database|history)\b", re.I)
+_UI_HINT = re.compile(r"\b(screen|page|displays?|shown?|dashboard|button|form|console)\b", re.I)
+
+
+def _mock_layer(text: str) -> str:
+    if re.search(r"end-to-end", text, re.I):
+        return "E2E"  # mimics a model inventing a value outside the allowed enum
+    if _DB_HINT.search(text):
+        return "DB"
+    if _UI_HINT.search(text):
+        return "UI"
+    return "API"
+
+
+def _mock_steps(text: str) -> list[str]:
+    given = "Given a synthetic member record exists"
+    match = re.match(r"(?i)(?:when|if)\s+(.+?),\s*(.+)", text)
+    if match:
+        return [given, f"When {match.group(1)}", f"Then {match.group(2)}"]
+    return [given, "When the workflow runs", f"Then {text[0].lower()}{text[1:]}"]
+
+
+@mock_behavior("test_generation")
+def _mock_test_generation(system: str, prompt: str) -> str:
+    story = input_payload(prompt)
+    scenarios = []
+    for criterion in story["acceptance_criteria"]:
+        text = criterion["text"].rstrip(".")
+        base = {
+            "feature": story["title"],
+            "test_layer": _mock_layer(text),
+            "source_criterion_id": criterion["id"],
+        }
+        kind = "negative" if _NEGATIVE_HINT.search(text) else "positive"
+        scenarios.append({**base, "scenario": text, "steps": _mock_steps(text), "tags": [kind]})
+        if _EDGE_HINT.search(text):
+            scenarios.append(
+                {
+                    **base,
+                    "scenario": f"Boundary: {text}",
+                    "steps": [
+                        "Given a synthetic member record exists",
+                        f"When the input sits exactly on the limit in: {text}",
+                        "Then the limit is applied as specified",
+                    ],
+                    "tags": ["edge"],
+                }
+            )
+    return json.dumps({"scenarios": scenarios})

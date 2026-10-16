@@ -1,0 +1,196 @@
+# Golden set for the Requirements-to-Test agent.
+# All stories are synthetic. "expected" lists the scenarios a reviewer would insist on:
+#   kind     positive | negative | edge  (negative/edge must be tagged as such)
+#   layer    the lowest layer that can prove it
+#   keywords words that must appear in the scenario name or steps
+stories:
+  - id: US-01
+    title: Member opts out of SMS
+    narrative: As a member, I want to reply STOP so that I no longer receive text messages.
+    acceptance_criteria:
+      - {id: AC1, text: "When a member replies STOP, the system sets sms_opt_out to true for that member."}
+      - {id: AC2, text: "After opt-out, no further outreach SMS is sent to the member."}
+      - {id: AC3, text: "The opt-out event is recorded in the consent audit table with a timestamp."}
+      - {id: AC4, text: "Replies of stop, Stop and STOP with trailing spaces are all treated as an opt-out."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [STOP, sms_opt_out]}
+      - {criterion: AC2, kind: positive, layer: API, keywords: [no further]}
+      - {criterion: AC3, kind: positive, layer: DB, keywords: [audit, timestamp]}
+      - {criterion: AC4, kind: edge, layer: API, keywords: [trailing spaces]}
+
+  - id: US-02
+    title: Spanish-speaking member gets a food bank referral
+    narrative: As a Spanish-speaking member, I want referral messages in Spanish so that I can act on them.
+    acceptance_criteria:
+      - {id: AC1, text: "When a member's preferred language is Spanish, the referral SMS is sent in Spanish."}
+      - {id: AC2, text: "The referral lists a food bank within 10 miles of the member's synthetic ZIP code."}
+      - {id: AC3, text: "If the preferred language is not supported, the message falls back to English and a translation request is logged."}
+      - {id: AC4, text: "The referral is stored in referral history with status SENT."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [Spanish]}
+      - {criterion: AC2, kind: edge, layer: API, keywords: [10 miles]}
+      - {criterion: AC3, kind: negative, layer: API, keywords: [not supported, English]}
+      - {criterion: AC4, kind: positive, layer: DB, keywords: [SENT]}
+
+  - id: US-03
+    title: Screening flags housing need and creates a referral
+    narrative: As a care coordinator, I want a housing referral created automatically when screening shows housing instability.
+    acceptance_criteria:
+      - {id: AC1, text: "When a screening answer indicates housing instability, a housing referral is created via the referrals API."}
+      - {id: AC2, text: "The referral is created only once per screening, even if the screening is resubmitted."}
+      - {id: AC3, text: "The care coordinator dashboard displays the new referral within 5 minutes."}
+      - {id: AC4, text: "The link between screening and referral is persisted in the database."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [housing referral]}
+      - {criterion: AC2, kind: edge, layer: API, keywords: [resubmitted]}
+      - {criterion: AC3, kind: edge, layer: UI, keywords: [5 minutes]}
+      - {criterion: AC4, kind: positive, layer: DB, keywords: [persisted]}
+
+  - id: US-04
+    title: Invalid phone number handling
+    narrative: As the outreach service, I want to reject bad phone numbers before any SMS is attempted.
+    acceptance_criteria:
+      - {id: AC1, text: "When a member's phone number is invalid, the outreach request is rejected with HTTP 422."}
+      - {id: AC2, text: "Phone numbers are normalized to E.164 format before sending."}
+      - {id: AC3, text: "A phone number with fewer than 10 digits is rejected."}
+      - {id: AC4, text: "The rejection reason is shown on the outreach admin page."}
+    expected:
+      - {criterion: AC1, kind: negative, layer: API, keywords: [422]}
+      - {criterion: AC2, kind: positive, layer: API, keywords: [E.164]}
+      - {criterion: AC3, kind: edge, layer: API, keywords: [10 digits]}
+      - {criterion: AC4, kind: positive, layer: UI, keywords: [rejection reason]}
+
+  - id: US-05
+    title: Voice call outreach with retries
+    narrative: As a program manager, I want unanswered outreach calls retried within safe limits.
+    acceptance_criteria:
+      - {id: AC1, text: "When a call is not answered, the system retries at most 3 times."}
+      - {id: AC2, text: "Calls are only placed between 8am and 8pm in the member's local time zone."}
+      - {id: AC3, text: "Each call attempt is recorded in the outreach history table."}
+      - {id: AC4, text: "A member who opted out of calls is never called."}
+    expected:
+      - {criterion: AC1, kind: edge, layer: API, keywords: [3 times]}
+      - {criterion: AC2, kind: edge, layer: API, keywords: [8pm]}
+      - {criterion: AC3, kind: positive, layer: DB, keywords: [history]}
+      - {criterion: AC4, kind: negative, layer: API, keywords: [opted out]}
+
+  - id: US-06
+    title: Email outreach with unsubscribe
+    narrative: As a member, I want to unsubscribe from outreach emails with one click.
+    acceptance_criteria:
+      - {id: AC1, text: "Every outreach email contains an unsubscribe link."}
+      - {id: AC2, text: "When the unsubscribe link is used, the member's email consent is set to false."}
+      - {id: AC3, text: "An email address without an @ symbol is rejected."}
+      - {id: AC4, text: "The preferences page displays the current consent status."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [unsubscribe link]}
+      - {criterion: AC2, kind: positive, layer: API, keywords: [consent]}
+      - {criterion: AC3, kind: negative, layer: API, keywords: [without]}
+      - {criterion: AC4, kind: positive, layer: UI, keywords: [consent status]}
+
+  - id: US-07
+    title: Referral status updates from a community partner
+    narrative: As a community partner, I want to report referral outcomes so the care team sees progress.
+    acceptance_criteria:
+      - {id: AC1, text: "When a community partner marks a referral as completed, the referral status changes to COMPLETED."}
+      - {id: AC2, text: "A status update for an unknown referral id returns HTTP 404."}
+      - {id: AC3, text: "A status update with an expired partner token is rejected with HTTP 401."}
+      - {id: AC4, text: "Every status change is written to the referral audit log table."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [COMPLETED]}
+      - {criterion: AC2, kind: negative, layer: API, keywords: [404]}
+      - {criterion: AC3, kind: negative, layer: API, keywords: [401]}
+      - {criterion: AC4, kind: positive, layer: DB, keywords: [audit]}
+
+  - id: US-08
+    title: Multilingual message templates
+    narrative: As a content editor, I want outreach templates in every supported language.
+    acceptance_criteria:
+      - {id: AC1, text: "Message templates are available in English, Spanish and Vietnamese."}
+      - {id: AC2, text: "When a template is missing for the member's language, the English template is used."}
+      - {id: AC3, text: "Template text longer than 160 characters is split into multiple SMS segments."}
+      - {id: AC4, text: "The template editor page shows a preview for each language."}
+      - {id: AC5, text: "Message templates are available in the English, Spanish and Vietnamese languages."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [Vietnamese]}
+      - {criterion: AC2, kind: negative, layer: API, keywords: [missing]}
+      - {criterion: AC3, kind: edge, layer: API, keywords: [160 characters]}
+      - {criterion: AC4, kind: positive, layer: UI, keywords: [preview]}
+
+  - id: US-09
+    title: Identity verification before sharing referral details
+    narrative: As a member, I want my details shared only after I am verified.
+    acceptance_criteria:
+      - {id: AC1, text: "Before discussing referral details by phone, the member must confirm their date of birth."}
+      - {id: AC2, text: "After 3 failed verification attempts, the call is transferred to a human agent."}
+      - {id: AC3, text: "Verification answers are never stored in plain text in the database."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [date of birth]}
+      - {criterion: AC2, kind: edge, layer: API, keywords: [3 failed]}
+      - {criterion: AC3, kind: negative, layer: DB, keywords: [plain text]}
+
+  - id: US-10
+    title: Outreach campaign scheduling
+    narrative: As a program manager, I want to schedule outreach campaigns safely.
+    acceptance_criteria:
+      - {id: AC1, text: "A campaign scheduled for a past date is rejected."}
+      - {id: AC2, text: "A campaign can target at most 10,000 members per batch."}
+      - {id: AC3, text: "The campaign calendar page displays scheduled campaigns by week."}
+      - {id: AC4, text: "The scheduling flow is verified end-to-end from campaign creation to the first SMS sent."}
+    expected:
+      - {criterion: AC1, kind: negative, layer: API, keywords: [past date]}
+      - {criterion: AC2, kind: edge, layer: API, keywords: ["10,000"]}
+      - {criterion: AC3, kind: positive, layer: UI, keywords: [calendar]}
+      - {criterion: AC4, kind: positive, layer: API, keywords: [campaign creation]}
+
+  - id: US-11
+    title: Consent check before any outreach
+    narrative: As a compliance officer, I want every outreach attempt gated on channel consent.
+    acceptance_criteria:
+      - {id: AC1, text: "No outreach is sent to a member without recorded consent for that channel."}
+      - {id: AC2, text: "Consent is checked separately for SMS, voice and email."}
+      - {id: AC3, text: "When consent is revoked, pending outreach for that channel is cancelled within 1 hour."}
+    expected:
+      - {criterion: AC1, kind: negative, layer: API, keywords: [consent]}
+      - {criterion: AC2, kind: positive, layer: API, keywords: [voice]}
+      - {criterion: AC3, kind: edge, layer: API, keywords: [1 hour]}
+
+  - id: US-12
+    title: Referral search for community services
+    narrative: As a care coordinator, I want to find nearby community services for a member.
+    acceptance_criteria:
+      - {id: AC1, text: "Searching by ZIP code returns community services sorted by distance."}
+      - {id: AC2, text: "A ZIP code that is not 5 digits returns a validation error."}
+      - {id: AC3, text: "Results show service name, phone and hours on the referral search page."}
+      - {id: AC4, text: "A search with no matching services shows a no services found message."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [sorted by distance]}
+      - {criterion: AC2, kind: negative, layer: API, keywords: [5 digits]}
+      - {criterion: AC3, kind: positive, layer: UI, keywords: [hours]}
+      - {criterion: AC4, kind: edge, layer: UI, keywords: [no services found]}
+
+  - id: US-13
+    title: PHI masking in the agent console
+    narrative: As a privacy officer, I want member identifiers masked wherever staff can see them.
+    acceptance_criteria:
+      - {id: AC1, text: "The agent console masks all but the last 4 digits of a member's phone number."}
+      - {id: AC2, text: "Member SSNs are never displayed on any page."}
+      - {id: AC3, text: "Every view of a member profile is recorded in the access audit table."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: UI, keywords: [last 4 digits]}
+      - {criterion: AC2, kind: negative, layer: UI, keywords: [SSNs]}
+      - {criterion: AC3, kind: positive, layer: DB, keywords: [access audit]}
+
+  - id: US-14
+    title: Inbound SMS reply routing
+    narrative: As a care coordinator, I want member SMS replies routed to the right place.
+    acceptance_criteria:
+      - {id: AC1, text: "When a member replies HELP, the system sends the support line message."}
+      - {id: AC2, text: "Unrecognized replies are routed to the care coordinator queue."}
+      - {id: AC3, text: "Replies in an unsupported language are routed to the queue with the tag needs_translation."}
+      - {id: AC4, text: "Replies received more than 30 days after the last outreach are ignored."}
+    expected:
+      - {criterion: AC1, kind: positive, layer: API, keywords: [HELP]}
+      - {criterion: AC2, kind: positive, layer: API, keywords: [care coordinator queue]}
+      - {criterion: AC3, kind: negative, layer: API, keywords: [needs_translation]}
+      - {criterion: AC4, kind: edge, layer: API, keywords: [30 days]}
