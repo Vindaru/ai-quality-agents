@@ -7,14 +7,13 @@ cost and latency down and makes most decisions auditable.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from aiq.llm import LLM, extract_json
+from aiq.llm import LLM, extract_json, wrap_input
 
 Category = Literal["product_bug", "automation_issue", "environment", "test_data"]
 CATEGORIES: list[str] = ["product_bug", "automation_issue", "environment", "test_data"]
@@ -138,9 +137,7 @@ class FailureTriageAgent:
 
     def _ask_llm(self, failure: Failure, reason: str) -> Triage:
         payload = failure.model_dump(exclude={"id"})
-        raw = self.llm.complete(
-            SYSTEM_PROMPT, f"<input>{json.dumps(payload)}</input>", task="failure_triage"
-        )
+        raw = self.llm.complete(SYSTEM_PROMPT, wrap_input(payload), task="failure_triage")
         try:
             answer = _LLMAnswer.model_validate(extract_json(raw))
         except (ValueError, ValidationError):

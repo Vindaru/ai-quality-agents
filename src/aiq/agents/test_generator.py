@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aiq.evals.scorers import near_duplicates, schema_valid
-from aiq.llm import LLM, extract_json
+from aiq.llm import LLM, extract_json, wrap_input
 
 SYSTEM_PROMPT = """You are a senior QA engineer for a member outreach and referral platform.
 Turn the user story into Gherkin test scenarios. Return JSON only, shaped as:
@@ -104,7 +104,7 @@ class RequirementsToTestAgent:
         self.llm = llm
 
     def run(self, story: Story) -> GenerationResult:
-        prompt = f"<input>{story.model_dump_json()}</input>"
+        prompt = wrap_input(story.model_dump())
         raw = self.llm.complete(SYSTEM_PROMPT, prompt, task="test_generation")
         result = self._parse(story.id, raw)
         self._check(story, result)

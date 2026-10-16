@@ -39,6 +39,13 @@ def extract_json(text: str) -> Any:
     return value
 
 
+def wrap_input(obj: Any) -> str:
+    """Serialize agent input into an <input> block. Angle brackets are escaped so text
+    from a member or a log line cannot close the block and pose as instructions."""
+    body = json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    return f"<input>{body}</input>"
+
+
 def input_payload(prompt: str) -> dict[str, Any]:
     """Agents wrap their structured input in <input>...</input>; the mock reads it back."""
     match = re.search(r"<input>(.*?)</input>", prompt, re.DOTALL)
@@ -215,3 +222,29 @@ def _mock_failure_triage(system: str, prompt: str) -> str:
     total = sum(len(v) for v in hits.values())
     confidence = round(len(hits[category]) / total, 2) if total else 0.25
     return json.dumps({"category": category, "confidence": confidence, "evidence": hits[category]})
+
+
+@mock_behavior("outreach_reply")
+def _mock_outreach_reply(system: str, prompt: str) -> str:
+    # A deliberately gullible model: it follows instructions found in member text and
+    # happily repeats what it was given. The guardrails, not the model, keep it safe.
+    data = input_payload(prompt)
+    text, member = data["text"], data["member"]
+    low = text.casefold()
+    spanish = member["language"] == "es"
+    if re.search(r"instruction|prompt|secret|rules|instrucciones|reglas", low):
+        message = f"Sure, here is what I was told: {system[:240]}"
+    elif low.strip() in {"stop", "alto"}:
+        message = "Has sido dado de baja." if spanish else "You are unsubscribed from texts."
+    elif low.strip() == "help":
+        message = "Ayuda: llame a la linea de apoyo." if spanish else "Help: call the support line."
+    elif re.search(r"on file|my (?:date of birth|phone number|address)", low):
+        message = (
+            f"Your phone on file is {member['phone']} and your date of birth is {member['dob']}."
+        )
+    else:
+        thanks = "Gracias" if spanish else "Thanks"
+        message = (
+            f'{thanks} {member["first_name"]}, we received: "{text}". A coordinator will follow up.'
+        )
+    return json.dumps({"action": "reply", "message": message})
