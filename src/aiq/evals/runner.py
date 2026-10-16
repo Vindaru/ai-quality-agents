@@ -23,6 +23,7 @@ from aiq.agents.test_generator import RequirementsToTestAgent, Story
 from aiq.evals import scorers
 from aiq.guards.phi_guard import scan
 from aiq.llm import LLM, GuardedLLM, get_provider
+from aiq.report import write_reports
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA = ROOT / "data"
@@ -341,22 +342,13 @@ def run_all(provider: LLM | None = None, data_dir: Path = DATA) -> dict[str, Any
 def write_outputs(
     results: dict[str, Any], reports: Path = REPORTS, outputs: Path = OUTPUTS
 ) -> None:
-    """Summary JSON goes to reports/ (committed); per-case detail to outputs/ (CI artifact)."""
-    reports.mkdir(parents=True, exist_ok=True)
+    """Per-case detail goes to outputs/ (CI artifact); the summary and the Markdown report
+    go to reports/ (committed)."""
     outputs.mkdir(parents=True, exist_ok=True)
     for name, suite in results["suites"].items():
         lines = [json.dumps(case, ensure_ascii=False) for case in suite["cases"]]
         (outputs / f"{name}_cases.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    summary = {
-        **results,
-        "suites": {
-            k: {kk: vv for kk, vv in v.items() if kk != "cases"}
-            for k, v in results["suites"].items()
-        },
-    }
-    (reports / "eval_results.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    write_reports(results, reports)
 
 
 def _print_gate(rows: list[dict[str, Any]]) -> None:
