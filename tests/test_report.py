@@ -27,7 +27,8 @@ def test_report_has_every_required_section(markdown):
         "## 6. Run and triage",
         "## 7. Fix agent",
         "## 8. End-to-end pipeline",
-        "## 9. Monitoring",
+        "## 9. RAG bot",
+        "## 10. Monitoring",
         "## What the evals caught",
         "## Known limitations",
     ]:
@@ -36,7 +37,7 @@ def test_report_has_every_required_section(markdown):
 
 def test_report_names_the_model_and_gate_result(markdown):
     assert "mock-heuristic-v1" in markdown and "deterministic offline mock" in markdown
-    assert "**PASSED** (35/35 checks)" in markdown
+    assert "**PASSED** (47/47 checks)" in markdown
 
 
 def test_report_lists_three_to_five_examples(markdown):

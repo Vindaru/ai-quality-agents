@@ -28,6 +28,7 @@ def test_runs_every_suite_and_passes_the_gate_on_the_mock(results):
         "monitoring",
         "fix",
         "pipeline",
+        "rag",
     }
     assert results["passed"], [r for r in results["gate"] if not r["passed"]]
     assert results["run"]["offline_mock"] is True
