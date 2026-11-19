@@ -11,7 +11,9 @@ The **Test-to-Code** agent turns approved scenarios into runnable API tests for 
 referral service, and mutation testing checks that those tests actually catch bugs. Those
 tests then **run against release candidates** (some with planted bugs, some in a broken
 environment), the **Failure-Triage** agent sorts every failure, and the run ends in a release
-decision: ship, ship with a test fix, rerun, or block. The **Failure-Triage** agent sorts
+decision: ship, ship with a test fix, rerun, or block. A **monitor** traces every model call
+and watches the triage agent on a simulated week of production failures for drift, without
+labels. The **Failure-Triage** agent sorts
 failed tests into product bug, automation issue, environment or test data. A third component, an
 SMS **outreach assistant**, is the target of a safety eval set covering prompt injection, PHI
 leakage and requests for another member's data. All three are scored against golden sets on every
@@ -22,8 +24,8 @@ test. The domain is healthcare member outreach and referrals, and all data is sy
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:15 UTC,
-quality gate **passed, 23/23 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:25 UTC,
+quality gate **passed, 26/26 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -42,6 +44,9 @@ Full report with the confusion matrix, failure examples and limitations:
 | Run and triage | triage_accuracy on 26 pipeline failures | 100.0% | ≥ 90.0% |
 | Run and triage | decision_accuracy (7 release runs) | 100.0% | ≥ 100.0% |
 | Run and triage | escaped_defect_count | 1 | ≤ 1, to ratchet to 0 |
+| Monitoring | drift nights alerted (new failure pattern x2, bad deploy) | 3 of 3 | 100% |
+| Monitoring | false alarms on normal nights | 0 of 3 | ≤ 0 |
+| Monitoring | invalid model output, over 339 traced calls | 0.0% | ≤ 2.0% |
 | Failure-Triage | accuracy | 85.4% | ≥ 80.0% |
 | Failure-Triage | accuracy 95% CI | 72.8% to 92.8% | not gated |
 | Failure-Triage | llm_routed_rate | 43.8% | ≤ 50.0% |
@@ -108,6 +113,10 @@ flowchart LR
     judge -- scenario_pass_rate, once trusted --> gate
     scorers --> gate{Quality gate} --> ci[CI pass / fail]
     scorers --> report[reports/eval_report.md]
+    llm -. one span per call .-> traces[(Traces: tokens, prompt version, errors)]
+    prod[Nightly failures, no labels] --> rules
+    tri --> mon{Drift monitor vs golden-set profile} --> review[Alert + review queue]
+    gate --> hist[(Run history)] -- worse than last run? --> report
 ```
 
 Every model call goes through `GuardedLLM`, which redacts PHI before the prompt leaves the process.
@@ -157,6 +166,18 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   it was injected: a planted bug, a broken environment, or a test that also fails on the known-good
   baseline. Triage is scored against that, and its labels are turned into a release decision so
   a triage mistake shows up as what it costs (a regression retried instead of blocked).
+- **Monitor behaviour when there are no labels.** Production failures arrive unlabeled, so
+  accuracy cannot be tracked nightly. The monitor tracks what can be seen instead: how often the
+  rules could not decide, how often the model was unsure, and the category mix (population
+  stability index), each against the agent's own profile on the golden set. Alerts send the
+  unsure failures to a person, and their labels become new golden cases. The monitor is
+  evaluated like an agent: a simulated week with known drift, scored on drift nights caught and
+  false alarms.
+- **Traces without text.** Spans follow the OpenTelemetry GenAI attribute names but keep only
+  sizes, the prompt version (a hash of the system prompt) and errors. A trace store is one more
+  place PHI could leak, so prompt and answer text never go into it.
+- **Direction, not just floors.** `reports/history.jsonl` keeps each run's gated metrics, and the
+  report flags any that got worse than the previous run, even when still above the threshold.
 - **A judge is a model too.** The scenario judge answers four yes/no checks (tests the
   criterion, concrete When, observable Then, correct tag) instead of a 1-10 score, because binary
   checks are easier to label and calibrate. The verdict is computed from the checks, never taken
@@ -184,6 +205,8 @@ More detail on metric definitions and how to extend the sets:
 src/aiq/llm.py                    LLM interface, deterministic mock, optional real provider, PHI-guarded wrapper
 src/aiq/agents/                   test_generator, test_to_code, failure_triage, outreach_assistant
 src/aiq/execution.py              stage 3: run a suite on a release candidate, build Failure records, release decision
+src/aiq/tracing.py                stage 4: OpenTelemetry GenAI-style spans for every model call
+src/aiq/monitor.py                stage 4: label-free drift signals, PSI, alerts, run-to-run regressions
 src/aiq/demo/referral_service.py  the system under test for generated tests, its API contract and 9 mutants
 src/aiq/guards/phi_guard.py       PHI detection and redaction with a value-free audit log
 src/aiq/evals/scorers.py          schema, PHI leak, injection, traceability, duplicates, classification, Wilson CI, Cohen's kappa
@@ -193,6 +216,8 @@ src/aiq/report.py                 writes reports/eval_report.md and reports/eval
 data/golden/                      14 stories, 48 labeled failures, 28 safety prompts (all synthetic)
 data/golden/test_to_code.yaml     11 approved scenarios for the three stories the demo service implements
 data/golden/release_runs.yaml     7 release candidates (planted bug x environment fault)
+data/monitor/                     a simulated week of nightly failures with known drift, and the alert limits
+reports/history.jsonl             gated metrics of every committed run
 data/judge/calibration.yaml       32 human-labeled scenarios the judge is calibrated against
 data/thresholds.yaml              the quality gate, including the judge's trust bar
 ```
@@ -202,7 +227,6 @@ data/thresholds.yaml              the quality gate, including the judge's trust 
 This repo is growing into an end-to-end pipeline: requirements → test cases → code → run and
 triage → monitor → fix. Next stages, one PR each:
 
-- **Monitor:** trace each agent call as a span, keep every run's metrics, and alert on drift.
 - **Fix:** a Fix agent that patches automation failures and weak tests (the two surviving
   mutants), keeping a patch only if it passes on the correct service and kills more mutants.
 - **Orchestrate:** one command that runs the whole chain with human approval points and writes a
@@ -214,7 +238,7 @@ triage → monitor → fix. Next stages, one PR each:
 - **Multilingual outreach evals:** more languages, and multilingual injection detection (the
   report shows a Vietnamese injection the current filter misses).
 - **A Playwright UI layer** that executes the generated UI scenarios against a demo app.
-- **Drift tracking:** keep every run's results and chart metrics over time and across models.
+- **Export traces** to Langfuse or Phoenix over OTLP, and use real provider token counts.
 
 ## Author
 

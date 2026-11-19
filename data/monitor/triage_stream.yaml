@@ -1,0 +1,306 @@
+# Simulated production traffic for monitoring the Failure-Triage agent: six nightly runs of
+# failures as they would arrive from CI, ten a night. Days 1-3 are drawn from the same kinds of
+# failures as the golden set. Days 4-5 add failure patterns the agent has never seen (the test
+# runners moved to Kubernetes and the UI suite to Playwright). Day 6 is a bad deploy: mostly
+# product bugs. `label` and `drift` are the answer key: the monitor never reads them, they are
+# used only to score the monitor afterwards. Hostnames use the reserved .test TLD.
+days:
+- day: 1
+  note: normal nightly run
+  drift: none
+  failures:
+  - id: S01
+    label: environment
+    test_name: test_send_referral_sms
+    error: 'requests.exceptions.HTTPError: 503 Server Error: Service Unavailable for url: https://sms-gateway.test/v1/messages'
+    logs:
+    - 2026-03-01T10:00:01Z WARN sms-gateway health check failing
+  - id: S02
+    label: environment
+    test_name: test_export_outreach_report
+    error: 'OSError: [Errno 28] No space left on device: ''/tmp/report.csv'''
+  - id: S03
+    label: environment
+    test_name: test_create_food_bank_referral
+    error: 'HTTPError: 504 Gateway Timeout from referral-service.test'
+  - id: S04
+    label: automation_issue
+    test_name: test_preferences_toggle
+    error: 'ElementNotInteractableException: element not interactable'
+  - id: S05
+    label: automation_issue
+    test_name: test_send_sms_helper
+    error: 'TypeError: send_sms() missing 1 required positional argument: ''language'''
+    stack: File tests/helpers/sms.py, line 12, in send_sms
+  - id: S06
+    label: automation_issue
+    test_name: test_member_api_contract
+    error: fixture 'member_api_client' not found
+    stack: 'available fixtures: cache, capsys, member_client, monkeypatch'
+  - id: S07
+    label: test_data
+    test_name: test_outreach_allowed_with_consent
+    error: 'AssertionError: consent expired for the synthetic member (consent_end in 2020)'
+  - id: S08
+    label: test_data
+    test_name: test_create_member
+    error: 'psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "members_pkey"'
+  - id: S09
+    label: product_bug
+    test_name: test_stop_reply_sets_opt_out
+    error: 'AssertionError: assert False is True'
+    stack: assert response.json()['sms_opt_out'] is True
+  - id: S10
+    label: product_bug
+    test_name: test_screening_resubmit_idempotent
+    error: 'AssertionError: duplicate referral created: expected 1, found 2'
+- day: 2
+  note: normal nightly run
+  drift: none
+  failures:
+  - id: S11
+    label: environment
+    test_name: test_translation_of_template
+    error: 'requests.exceptions.ReadTimeout: HTTPSConnectionPool(host=''translate.test'', port=443): Read timed out. (read timeout=10)'
+  - id: S12
+    label: environment
+    test_name: test_bulk_campaign_10000_members
+    error: worker exited unexpectedly
+    logs:
+    - pod campaign-worker-2 OOMKilled
+    - container restarted during test run
+  - id: S13
+    label: environment
+    test_name: test_spanish_outreach_voice
+    error: 'socket.gaierror: [Errno -2] Name or service not known: ''voice-provider.test'''
+  - id: S14
+    label: automation_issue
+    test_name: test_template_preview_ui
+    error: 'AttributeError: ''NoneType'' object has no attribute ''click'''
+    stack: File pages/template_editor.py, line 41, in open_preview
+  - id: S15
+    label: automation_issue
+    test_name: test_referral_page_title
+    error: 'ImportError: cannot import name ''ReferralPage'' from ''pages.referral'''
+  - id: S16
+    label: automation_issue
+    test_name: test_filter_by_language_ui
+    error: 'selenium.common.exceptions.InvalidSelectorException: invalid selector: An invalid or illegal selector was specified'
+  - id: S17
+    label: test_data
+    test_name: test_link_referral_to_screening
+    error: 'sqlite3.IntegrityError: FOREIGN KEY constraint failed'
+  - id: S18
+    label: test_data
+    test_name: test_vietnamese_template_selected
+    error: 'LookupError: seed data missing: no member with language ''vi'' in the test dataset'
+  - id: S19
+    label: product_bug
+    test_name: test_create_referral_api
+    error: 'requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: /referrals'
+    logs:
+    - NullPointerException in ReferralService.create
+  - id: S20
+    label: product_bug
+    test_name: test_spanish_member_gets_spanish_sms
+    error: 'AssertionError: SMS language ''en'' != expected ''es'' for a Spanish-speaking member'
+- day: 3
+  note: normal nightly run
+  drift: none
+  failures:
+  - id: S21
+    label: environment
+    test_name: test_referral_status_webhook
+    error: 'HTTPError: 502 Bad Gateway'
+    logs:
+    - 'ingress: upstream referral-service not ready'
+  - id: S22
+    label: environment
+    test_name: test_referral_search_by_zip
+    error: 'AssertionError: expected status 200 but got 503'
+    logs:
+    - 'search-service: Service Unavailable (maintenance window)'
+  - id: S23
+    label: environment
+    test_name: test_outreach_event_published
+    error: 'kafka.errors.NoBrokersAvailable: NoBrokersAvailable'
+    logs:
+    - event bus container restarting
+  - id: S24
+    label: automation_issue
+    test_name: test_send_sms_from_console
+    error: 'TimeoutError: locator.click: Timeout 30000ms exceeded.'
+    logs:
+    - waiting for locator('button#send-sms')
+  - id: S25
+    label: automation_issue
+    test_name: test_referral_list_count
+    error: 'AssertionError: assert 2 == 3'
+    logs:
+    - passed on retry 2 of 3
+    - marked flaky in last 5 runs
+  - id: S26
+    label: automation_issue
+    test_name: test_edit_member_language_ui
+    error: 'selenium.common.exceptions.StaleElementReferenceException: element is not attached to the page document'
+  - id: S27
+    label: test_data
+    test_name: test_import_spanish_members
+    error: 'FileNotFoundError: fixture file data/members_es.csv not found'
+  - id: S28
+    label: test_data
+    test_name: test_food_banks_near_zip
+    error: 'AssertionError: expected 3 food banks for ZIP 00000, found 0'
+    logs:
+    - reference table community_services is empty in this environment
+  - id: S29
+    label: product_bug
+    test_name: test_call_retry_limit
+    error: 'AssertionError: retry count was 5, expected at most 3'
+  - id: S30
+    label: product_bug
+    test_name: test_invalid_phone_rejected
+    error: 'AssertionError: expected 422 for an invalid phone number, got 200'
+- day: 4
+  note: test runners moved to Kubernetes and the UI suite to Playwright
+  drift: new_failure_pattern
+  failures:
+  - id: S31
+    label: automation_issue
+    test_name: test_submit_referral_form
+    error: 'Error: strict mode violation: getByRole(''button'', { name: ''Submit'' }) resolved to 2 elements'
+  - id: S32
+    label: environment
+    test_name: test_referral_worker_drains_queue
+    error: 'Pod test-runner-5c9d terminated: OOMKilled (exit code 137)'
+  - id: S33
+    label: environment
+    test_name: test_member_search_paging
+    error: 'Failed: Timeout >30.0s waiting for referral-worker readiness probe'
+  - id: S34
+    label: test_data
+    test_name: test_spanish_template_render
+    error: 'LookupError: tenant ''qa-east'' has no member_factory configured'
+  - id: S35
+    label: automation_issue
+    test_name: test_consent_banner_dismiss
+    error: 'Error: page.getByText(''Accept''): Target page, context or browser has been closed'
+  - id: S36
+    label: environment
+    test_name: test_sms_delivery_receipt
+    error: 'ImagePullBackOff: back-off pulling image registry.test/sms-mock:1.4'
+  - id: S37
+    label: environment
+    test_name: test_inbound_sms_routing
+    error: 'Error: read ECONNRESET'
+    stack: at TLSSocket.onConnectEnd (node:_tls_wrap)
+  - id: S38
+    label: automation_issue
+    test_name: test_member_table_loads
+    error: 'TimeoutError: waiting for selector "[data-test=member-row]" failed: timeout 15000ms exceeded'
+  - id: S39
+    label: test_data
+    test_name: test_create_referral_external_id
+    error: 'IntegrityError: duplicate key value violates unique constraint "referrals_external_id_key"'
+  - id: S40
+    label: product_bug
+    test_name: test_referral_status_after_send
+    error: 'AssertionError: expected status SENT but was FAILED'
+- day: 5
+  note: test runners moved to Kubernetes and the UI suite to Playwright
+  drift: new_failure_pattern
+  failures:
+  - id: S41
+    label: environment
+    test_name: test_outreach_export_csv
+    error: 'Pod test-runner-8a21 evicted: The node was low on resource: ephemeral-storage'
+  - id: S42
+    label: automation_issue
+    test_name: test_referral_list_sort
+    error: 'Error: expect(locator).toHaveCount(5) failed: strict mode violation, resolved to 7 elements'
+  - id: S43
+    label: test_data
+    test_name: test_food_bank_referral_closed
+    error: 'LookupError: no food bank partners configured for tenant qa-east'
+  - id: S44
+    label: environment
+    test_name: test_voice_call_retry
+    error: 'Pod test-runner-11fe terminated: OOMKilled (exit code 137)'
+  - id: S45
+    label: automation_issue
+    test_name: test_language_toggle
+    error: 'Error: page.click: Target page, context or browser has been closed'
+  - id: S46
+    label: test_data
+    test_name: test_member_merge_duplicates
+    error: 'LookupError: tenant ''qa-east'' has no member_factory configured'
+  - id: S47
+    label: environment
+    test_name: test_email_unsubscribe_link
+    error: 'ssl.SSLCertVerificationError: certificate verify failed: certificate has expired'
+    logs:
+    - staging TLS certificate rotation job did not run
+  - id: S48
+    label: automation_issue
+    test_name: test_submit_referral_form_ui
+    error: 'selenium.common.exceptions.NoSuchElementException: Unable to locate element: #referral-submit'
+  - id: S49
+    label: test_data
+    test_name: test_spanish_referral_journey
+    error: 'RuntimeError: no test member available for scenario ''spanish_referral'''
+  - id: S50
+    label: product_bug
+    test_name: test_email_contains_unsubscribe
+    error: 'AssertionError: unsubscribe link missing from the email body'
+- day: 6
+  note: a bad deploy reached staging
+  drift: category_shift
+  failures:
+  - id: S51
+    label: product_bug
+    test_name: test_console_masks_phone
+    error: 'AssertionError: console shows the full phone number (555) 010-0110 instead of the masked value'
+  - id: S52
+    label: product_bug
+    test_name: test_referral_search_handler
+    error: HTTP 500 returned by /search
+    logs:
+    - KeyError 'zip' in referral_search handler
+  - id: S53
+    label: product_bug
+    test_name: test_referral_complete_callback
+    error: HTTP 500 Internal Server Error from /referrals/complete
+    logs:
+    - 'upstream partner callback: connection reset by peer while handling error'
+  - id: S54
+    label: product_bug
+    test_name: test_distance_sorting
+    error: Internal Server Error
+    stack: 'ZeroDivisionError: division by zero in distance.py, line 18'
+  - id: S55
+    label: product_bug
+    test_name: test_email_contains_unsubscribe
+    error: 'AssertionError: unsubscribe link missing from the email body'
+  - id: S56
+    label: product_bug
+    test_name: test_screening_resubmit_idempotent
+    error: 'AssertionError: duplicate referral created: expected 1, found 2'
+  - id: S57
+    label: product_bug
+    test_name: test_referral_status_after_send
+    error: 'AssertionError: expected status SENT but was FAILED'
+  - id: S58
+    label: environment
+    test_name: test_member_lookup_by_id
+    error: 'psycopg2.OperationalError: could not connect to server: Connection refused'
+    stack: File tests/api/test_members.py, line 22, in test_member_lookup_by_id
+  - id: S59
+    label: automation_issue
+    test_name: test_open_referral_details
+    error: 'ElementClickInterceptedException: element click intercepted: Other element would receive the click: <div class=''toast''>'
+  - id: S60
+    label: test_data
+    test_name: test_member_profile_api
+    error: 'HTTPError: 404 Not Found for url: /members/MBR-900404'
+    logs:
+    - test member not found in this environment

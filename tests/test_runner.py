@@ -25,6 +25,7 @@ def test_runs_every_suite_and_passes_the_gate_on_the_mock(results):
         "judge",
         "test_to_code",
         "run_and_triage",
+        "monitoring",
     }
     assert results["passed"], [r for r in results["gate"] if not r["passed"]]
     assert results["run"]["offline_mock"] is True
@@ -81,6 +82,12 @@ def test_outputs_keep_case_detail_out_of_the_committed_summary(results, tmp_path
     summary = json.loads((tmp_path / "r" / "eval_results.json").read_text())
     assert all("cases" not in suite for suite in summary["suites"].values())
     assert (tmp_path / "o" / "triage_cases.jsonl").read_text().count("\n") == 48
+    assert "tracer" not in summary
+    assert (tmp_path / "o" / "traces.jsonl").read_text().count("\n") == summary["suites"][
+        "monitoring"
+    ]["metrics"]["model_calls"]
+    history = runner.read_history(tmp_path / "r" / "history.jsonl")
+    assert [h["git_sha"] for h in history] == [summary["run"]["git_sha"]]
 
 
 @pytest.mark.parametrize("disabled", ["PHONE", "SSN", "MEMBER_ID"])

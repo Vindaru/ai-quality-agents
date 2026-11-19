@@ -19,6 +19,7 @@ SUITE_TITLES = {
     "judge": "Scenario judge",
     "test_to_code": "Test-to-Code",
     "run_and_triage": "Run and triage",
+    "monitoring": "Monitoring",
 }
 COUNT_METRICS = {
     "phi_leak_count",
@@ -30,6 +31,7 @@ COUNT_METRICS = {
     "unsafe_code_count",
     "escaped_defect_count",
     "failures_triaged",
+    "false_alarm_days",
 }
 
 # Which findings make the best examples, and what each one means.
@@ -277,6 +279,116 @@ def _run_section(results: dict[str, Any]) -> list[str]:
     ]
 
 
+def _monitor_section(results: dict[str, Any]) -> list[str]:
+    mon = results["suites"].get("monitoring")
+    if mon is None:
+        return []
+    ref = mon["reference"]
+    out = [
+        "",
+        "## 7. Monitoring",
+        "",
+        "**Production drift.** The Failure-Triage agent ran on a simulated week of nightly CI "
+        f"failures ({mon['counts']['failures']} over {mon['counts']['days']} nights). The "
+        "monitor sees no labels. It compares each night's behaviour with the agent's profile on "
+        f"the golden set (model routing {_fmt('a', ref['llm_routed_rate'])}, unsure answers "
+        f"{_fmt('a', ref['low_confidence_rate'])}) and alerts when a signal moves past its "
+        "limit in `data/monitor/alerts.yaml`. Accuracy is computed afterwards from the answer "
+        "key, only to show what the signals were standing in for.",
+        "",
+        *_metric_table(results, "monitoring"),
+        "",
+        *_table(
+            ["Night", "What happened", "Model routing", "Unsure", "Mix PSI", "Alerts", "Accuracy"],
+            [
+                [
+                    str(d["day"]),
+                    d["note"],
+                    _fmt("a", d["llm_routed_rate"]),
+                    _fmt("a", d["low_confidence_rate"]),
+                    f"{d['psi']:.2f}",
+                    "; ".join(d["alerts"]).replace("|", "\\|") or "none",
+                    _fmt("a", d["accuracy"]),
+                ]
+                for d in mon["days"]
+            ],
+        ),
+    ]
+    tracing = mon.get("tracing", {})
+    if tracing:
+        out += [
+            "",
+            f"**Tracing.** Every model call in this run was traced ({mon['metrics']['model_calls']}"
+            " calls) as an OpenTelemetry GenAI-style span in `outputs/traces.jsonl`. Spans hold "
+            "sizes, the prompt version (a hash of the system prompt) and whether the answer "
+            "parsed, never prompt or answer text. Token counts are estimates (4 characters per "
+            "token).",
+            "",
+            *_table(
+                ["Task", "Calls", "Input tokens", "Output tokens", "Invalid JSON", "Prompt"],
+                [
+                    [
+                        task,
+                        str(t["calls"]),
+                        f"{t['input_tokens']:,}",
+                        f"{t['output_tokens']:,}",
+                        str(t["invalid_json"]),
+                        ", ".join(f"`{v}`" for v in t["prompt_versions"]),
+                    ]
+                    for task, t in tracing.items()
+                ],
+            ),
+        ]
+    history = results.get("history")
+    if history:
+        prev = history["previous"]
+        regs = history["regressions"]
+        out += [
+            "",
+            "**Run history.** Each run's gated metrics are kept in `reports/history.jsonl`. "
+            "The gate checks floors; this checks direction. "
+            + (
+                f"Compared with the previous run (`{prev['git_sha']}`): "
+                + (
+                    ", ".join(
+                        f"{r['suite']}.{r['metric']} {_fmt(r['metric'], r['before'])} -> "
+                        f"{_fmt(r['metric'], r['now'])}"
+                        for r in regs
+                    )
+                    + " got worse."
+                    if regs
+                    else "no gated metric got worse."
+                )
+                if prev
+                else "There is no previous run to compare with yet."
+            ),
+            "",
+        ]
+        recent = history["recent"]
+        tracked = [
+            ("test_generator", "expected_scenario_recall"),
+            ("triage", "accuracy"),
+            ("safety", "phi_leak_count"),
+            ("judge", "scenario_pass_rate"),
+            ("test_to_code", "mutation_kill_rate"),
+            ("run_and_triage", "escaped_defect_count"),
+        ]
+        out += _table(
+            ["Commit", *(m for _, m in tracked)],
+            [
+                [
+                    f"`{h['git_sha']}`",
+                    *(
+                        _fmt(m, h["metrics"][s][m]) if m in h["metrics"].get(s, {}) else "-"
+                        for s, m in tracked
+                    ),
+                ]
+                for h in recent
+            ],
+        )
+    return out
+
+
 def render(results: dict[str, Any]) -> str:
     run = results["run"]
     passed = sum(r["passed"] for r in results["gate"])
@@ -404,6 +516,7 @@ def render(results: dict[str, Any]) -> str:
     out += _judge_section(results)
     out += _code_section(results)
     out += _run_section(results)
+    out += _monitor_section(results)
     out += ["", "## What the evals caught", ""]
     for f in _examples(results):
         out += [f"- **{f['case']}** ({f['type']}): {f['detail']}  ", f"  {EXPLANATIONS[_kind(f)]}"]
@@ -438,7 +551,7 @@ def render(results: dict[str, Any]) -> str:
 def write_reports(results: dict[str, Any], reports: Path = REPORTS) -> None:
     """Write reports/eval_results.json (summary, no per-case detail) and eval_report.md."""
     summary = {
-        **results,
+        **{k: v for k, v in results.items() if k != "tracer"},
         "suites": {
             name: {k: v for k, v in suite.items() if k != "cases"}
             for name, suite in results["suites"].items()

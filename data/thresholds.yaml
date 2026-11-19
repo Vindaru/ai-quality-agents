@@ -28,6 +28,10 @@ run_and_triage:
   triage_accuracy: {min: 0.90}      # triage of real pipeline failures vs the injected cause
   decision_accuracy: {min: 1.0}     # block / rerun / ship decision vs what the true causes call for
   escaped_defect_count: {max: 1}    # bugged builds that would ship; baseline 1 (E.164), ratchet to 0
+monitoring:
+  drift_day_recall: {min: 1.0}      # every simulated drift day raised an alert
+  false_alarm_days: {max: 0}        # no alert on a normal day
+  invalid_output_rate: {max: 0.02}  # traced model answers that were not parseable JSON
 judge:
   # Floors set from the first baseline so the judge cannot quietly get worse. They are not the
   # bar for trusting it; that is judge_trust below.

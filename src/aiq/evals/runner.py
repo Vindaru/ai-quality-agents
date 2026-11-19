@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent
+from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent, Triage
 from aiq.agents.outreach_assistant import CANARY, Member, OutreachAssistant
 from aiq.agents.test_generator import RequirementsToTestAgent, Story, lint_scenario
 from aiq.agents.test_to_code import GeneratedTest, TestToCodeAgent, run_test
@@ -27,7 +27,9 @@ from aiq.evals.judge import CHECKS, JUDGE_VERSION, ScenarioJudge
 from aiq.execution import execute, release_decision, to_failure
 from aiq.guards.phi_guard import scan
 from aiq.llm import LLM, GuardedLLM, get_judge_provider, get_provider
+from aiq.monitor import compare_runs, monitor_stream, profile
 from aiq.report import write_reports
+from aiq.tracing import Tracer, TracingLLM, summarize
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA = ROOT / "data"
@@ -583,6 +585,108 @@ def eval_judge(
     }
 
 
+# --- monitoring ------------------------------------------------------------------------------
+
+
+def eval_monitoring(
+    llm: LLM, triage_cases: list[dict[str, Any]], data_dir: Path = DATA / "monitor"
+) -> dict[str, Any]:
+    """Score the production monitor on a simulated week whose drift is known: did it alert on
+    the drift days, and stay quiet on the normal ones? Labels are used only here, after the
+    monitor has run, to show what each day's accuracy really was."""
+    rules = _load("alerts.yaml", data_dir)
+    days = _load("triage_stream.yaml", data_dir)["days"]
+    golden = [
+        Triage.model_validate({k: v for k, v in c.items() if k != "label"}) for c in triage_cases
+    ]
+    reference = profile(golden, rules["low_confidence"])
+    results = monitor_stream(FailureTriageAgent(llm), days, reference, rules)
+    rows, findings = [], []
+    for day, result in zip(days, results, strict=True):
+        labels = {f["id"]: f["label"] for f in day["failures"]}
+        correct = sum(t["category"] == labels[t["failure_id"]] for t in result["triages"])
+        drift = day["drift"] != "none"
+        alerted = bool(result["alerts"])
+        rows.append(
+            {
+                "day": day["day"],
+                "note": day["note"],
+                "drift": day["drift"],
+                "alerts": result["alerts"],
+                "review_queue": result["review_queue"],
+                "accuracy": _ratio(correct, len(labels)),
+                **{k: v for k, v in result["signals"].items() if k != "mix"},
+            }
+        )
+        if drift and not alerted:
+            findings.append(
+                {"case": f"day {day['day']}", "type": "drift_missed", "detail": day["drift"]}
+            )
+        if alerted and not drift:
+            findings.append(
+                {
+                    "case": f"day {day['day']}",
+                    "type": "false_alarm",
+                    "detail": "; ".join(result["alerts"]),
+                }
+            )
+    drift_days = [r for r in rows if r["drift"] != "none"]
+    quiet_days = [r for r in rows if r["drift"] == "none"]
+    metrics = {
+        "drift_day_recall": _ratio(sum(bool(r["alerts"]) for r in drift_days), len(drift_days)),
+        "false_alarm_days": sum(bool(r["alerts"]) for r in quiet_days),
+        "accuracy_on_normal_days": _ratio(
+            sum(r["accuracy"] * r["failures"] for r in quiet_days),
+            sum(r["failures"] for r in quiet_days),
+        ),
+        "accuracy_on_drift_days": _ratio(
+            sum(r["accuracy"] * r["failures"] for r in drift_days),
+            sum(r["failures"] for r in drift_days),
+        ),
+    }
+    metrics = {k: round(v, 4) if isinstance(v, float) else v for k, v in metrics.items()}
+    return {
+        "metrics": metrics,
+        "counts": {"days": len(rows), "failures": sum(r["failures"] for r in rows)},
+        "reference": {k: v for k, v in reference.items()},
+        "days": rows,
+        "findings": findings,
+        "cases": [
+            {"day": r["day"], **t}
+            for r, res in zip(rows, results, strict=True)
+            for t in res["triages"]
+        ],
+    }
+
+
+# --- run history -----------------------------------------------------------------------------
+
+
+def gated_metrics(suites: dict[str, Any], thresholds: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The metrics the gate checks, per suite: what run history keeps."""
+    names = {suite: list(rules) for suite, rules in thresholds.items() if suite != "judge_trust"}
+    names.setdefault("judge", []).append("scenario_pass_rate")
+    return {
+        suite: {m: suites[suite]["metrics"][m] for m in metrics if m in suites[suite]["metrics"]}
+        for suite, metrics in names.items()
+        if suite in suites
+    }
+
+
+def read_history(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def append_history(path: Path, entry: dict[str, Any]) -> None:
+    """One line per commit and model: rerunning on the same commit replaces its line."""
+    key = (entry["git_sha"], entry["model"])
+    rows = [r for r in read_history(path) if (r["git_sha"], r["model"]) != key] + [entry]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+
 # --- gate ------------------------------------------------------------------------------------
 
 
@@ -635,21 +739,31 @@ def _git_sha() -> str:
 
 
 def run_all(
-    provider: LLM | None = None, data_dir: Path = DATA, judge_provider: LLM | None = None
+    provider: LLM | None = None,
+    data_dir: Path = DATA,
+    judge_provider: LLM | None = None,
+    history_path: Path | None = None,
 ) -> dict[str, Any]:
+    history_path = history_path or REPORTS / "history.jsonl"
     if provider is None:
         provider = get_provider()
         judge_provider = judge_provider or get_judge_provider()
     judge_provider = judge_provider or provider
     golden = data_dir / "golden"
+    # Every model call is traced. The tracer sits under the PHI guard, so spans describe what
+    # actually went to the provider.
+    tracer = Tracer()
+    provider = TracingLLM(provider, tracer)
+    judge_provider = TracingLLM(judge_provider, tracer)
     test_generator = eval_test_generator(GuardedLLM(provider), golden)
     # The same agent without its review-and-fix step: the judge grades both, so the report
     # shows what the repair loop is worth (an ablation, like the guardrails-off safety run).
     without_repair = eval_test_generator(GuardedLLM(provider), golden, repair=False)
     test_to_code = eval_test_to_code(GuardedLLM(provider), golden)
+    triage = eval_triage(GuardedLLM(provider), golden)
     suites = {
         "test_generator": test_generator,
-        "triage": eval_triage(GuardedLLM(provider), golden),
+        "triage": triage,
         "safety": eval_safety(provider, golden),
         "test_to_code": test_to_code,
         "run_and_triage": eval_run_and_triage(GuardedLLM(provider), test_to_code["cases"], golden),
@@ -660,20 +774,50 @@ def run_all(
             data_dir / "judge",
             baseline=without_repair["cases"],
         ),
+        "monitoring": eval_monitoring(GuardedLLM(provider), triage["cases"], data_dir / "monitor"),
     }
-    rows, trusted = gate(suites, _load("thresholds.yaml", data_dir))
+    thresholds = _load("thresholds.yaml", data_dir)
+    spans = summarize(tracer.spans)
+    calls = sum(t["calls"] for t in spans.values())
+    suites["monitoring"]["tracing"] = spans
+    suites["monitoring"]["metrics"]["model_calls"] = calls
+    suites["monitoring"]["metrics"]["invalid_output_rate"] = _ratio(
+        sum(t["invalid_json"] for t in spans.values()), calls
+    )
+    rows, trusted = gate(suites, thresholds)
+    history = read_history(history_path)
+    sha = _git_sha()
+    previous = next((h for h in reversed(history) if h["git_sha"] != sha), None)
+    current = gated_metrics(suites, thresholds)
+    regressions = (
+        compare_runs(
+            current,
+            previous["metrics"],
+            {k: v for k, v in thresholds.items() if k != "judge_trust"},
+            _load("alerts.yaml", data_dir / "monitor")["regression_tolerance"],
+        )
+        if previous
+        else []
+    )
     return {
         "run": {
             "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
             "model": provider.name,
             "judge_model": judge_provider.name,
             "offline_mock": provider.name.startswith("mock"),
-            "git_sha": _git_sha(),
+            "git_sha": sha,
             "python": platform.python_version(),
         },
         "suites": suites,
         "gate": rows,
         "judge_trusted": trusted,
+        "history": {
+            "previous": previous,
+            "regressions": regressions,
+            "recent": [*history[-6:], {"git_sha": sha, "metrics": current}],
+            "current": current,
+        },
+        "tracer": tracer,
         "passed": all(row["passed"] for row in rows),
     }
 
@@ -684,6 +828,17 @@ def write_outputs(
     """Per-case detail goes to outputs/ (CI artifact); the summary and the Markdown report
     go to reports/ (committed)."""
     outputs.mkdir(parents=True, exist_ok=True)
+    results["tracer"].write_jsonl(outputs / "traces.jsonl")
+    run = results["run"]
+    append_history(
+        reports / "history.jsonl",
+        {
+            "timestamp": run["timestamp"],
+            "git_sha": run["git_sha"],
+            "model": run["model"],
+            "metrics": results["history"]["current"],
+        },
+    )
     for name, suite in results["suites"].items():
         lines = [json.dumps(case, ensure_ascii=False) for case in suite["cases"]]
         (outputs / f"{name}_cases.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")

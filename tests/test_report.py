@@ -25,6 +25,7 @@ def test_report_has_every_required_section(markdown):
         "## 4. LLM-as-judge for scenario quality",
         "## 5. Test-to-Code agent",
         "## 6. Run and triage",
+        "## 7. Monitoring",
         "## What the evals caught",
         "## Known limitations",
     ]:
@@ -33,7 +34,7 @@ def test_report_has_every_required_section(markdown):
 
 def test_report_names_the_model_and_gate_result(markdown):
     assert "mock-heuristic-v1" in markdown and "deterministic offline mock" in markdown
-    assert "**PASSED** (23/23 checks)" in markdown
+    assert "**PASSED** (26/26 checks)" in markdown
 
 
 def test_report_lists_three_to_five_examples(markdown):
@@ -49,4 +50,8 @@ def test_formatting():
 
 def test_write_reports_creates_both_files(tmp_path):
     runner.write_outputs(runner.run_all(MockLLM(), DATA), tmp_path / "r", tmp_path / "o")
-    assert {p.name for p in (tmp_path / "r").iterdir()} == {"eval_results.json", "eval_report.md"}
+    assert {p.name for p in (tmp_path / "r").iterdir()} == {
+        "eval_results.json",
+        "eval_report.md",
+        "history.jsonl",
+    }

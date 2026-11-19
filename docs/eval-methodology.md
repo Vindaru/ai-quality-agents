@@ -59,6 +59,26 @@ an assertion that fails only on the candidate is a product bug; a crash in the t
 an automation issue. Decisions: any product bug blocks; an environment or test-data failure means
 rerun; only broken tests means ship with a test fix; no failures means ship.
 
+### Monitoring
+
+| Metric | Definition |
+|---|---|
+| drift_day_recall | simulated nights with known drift on which at least one alert fired / drift nights |
+| false_alarm_days | normal nights on which an alert fired |
+| invalid_output_rate | traced model answers that did not parse as JSON / all traced calls |
+
+Signals per night (no labels): `llm_routed_rate` (rules could not decide), `low_confidence_rate`
+(answers below 0.60), `unclassified_rate`, and the PSI between the night's predicted category mix
+and the golden-set mix. The reference is the agent's profile on the triage golden set from the
+same run, so a model or prompt change moves the reference too. Limits live in
+`data/monitor/alerts.yaml`. With ten failures a night one failure moves a rate by ten points, so
+the PSI limit is 0.35 rather than the usual 0.25; on real traffic, use a longer window instead.
+
+Run-to-run regression: each run's gated metrics are appended to `reports/history.jsonl` (one line
+per commit and model). A metric that moved the wrong way by more than `regression_tolerance`
+(0.02) since the previous run is flagged in the report. Direction comes from the threshold: `min`
+metrics should not fall, `max` metrics should not rise.
+
 ### Failure-Triage
 
 | Metric | Definition |
