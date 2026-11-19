@@ -172,21 +172,45 @@ class ReferralService:
         return Response(200, {"rows": [dict(r) for r in self.audit[table]]})
 
 
-class ServiceClient:
-    """What a generated test sees as its ``client`` fixture."""
+FAULTS: dict[str, dict[str, Any]] = {
+    "gateway_down": {
+        "category": "environment",
+        "logs": ["ingress: upstream referral-service not ready", "health check failing for 4m"],
+    },
+    "seed_missing": {
+        "category": "test_data",
+        "logs": ["seed job finished: 0 members loaded (expected 1)"],
+    },
+}
 
-    def __init__(self, service: ReferralService) -> None:
+
+class ServiceClient:
+    """What a generated test sees as its ``client`` fixture. ``fault`` simulates a broken test
+    environment rather than a broken service: the gateway is down, or seed data never loaded."""
+
+    def __init__(self, service: ReferralService, fault: str | None = None) -> None:
+        if fault is not None and fault not in FAULTS:
+            raise ValueError(f"unknown fault {fault!r}")
         self._service = service
+        self._fault = fault
+
+    def _call(self, method: str, path: str, body: Any, headers: Any) -> Response:
+        if self._fault == "gateway_down":
+            raise ConnectionRefusedError("[Errno 111] Connection refused: referral-service.test")
+        touches_m1 = "M-1" in path or (body or {}).get("member_id") == "M-1"
+        if self._fault == "seed_missing" and touches_m1:
+            raise LookupError("seed data missing: member M-1 was not loaded")
+        return self._service.request(method, path, body, headers)
 
     def get(self, path: str, headers: dict[str, str] | None = None) -> Response:
-        return self._service.request("GET", path, None, headers)
+        return self._call("GET", path, None, headers)
 
     def post(
         self, path: str, json: dict[str, Any] | None = None, headers: dict[str, str] | None = None
     ) -> Response:
-        return self._service.request("POST", path, json, headers)
+        return self._call("POST", path, json, headers)
 
     def put(
         self, path: str, json: dict[str, Any] | None = None, headers: dict[str, str] | None = None
     ) -> Response:
-        return self._service.request("PUT", path, json, headers)
+        return self._call("PUT", path, json, headers)

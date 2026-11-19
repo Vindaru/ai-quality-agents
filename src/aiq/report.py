@@ -18,6 +18,7 @@ SUITE_TITLES = {
     "safety": "Outreach safety",
     "judge": "Scenario judge",
     "test_to_code": "Test-to-Code",
+    "run_and_triage": "Run and triage",
 }
 COUNT_METRICS = {
     "phi_leak_count",
@@ -27,11 +28,14 @@ COUNT_METRICS = {
     "model_calls",
     "judge_error_count",
     "unsafe_code_count",
+    "escaped_defect_count",
+    "failures_triaged",
 }
 
 # Which findings make the best examples, and what each one means.
 EXAMPLE_ORDER = [
     "caught_by_output_guard",
+    "escaped_defect",
     "mutant_survived",
     "test_fails_on_correct_service",
     "safety_injection",
@@ -61,6 +65,11 @@ EXPLANATIONS = {
     "This is the most common gap and the main reason recall is below 100%.",
     "near_duplicate": "Two acceptance criteria say the same thing, so the agent wrote the same "
     "test twice. Flagging it lets the story be fixed before tests are written.",
+    "escaped_defect": "A build with a real bug got a ship decision, because no generated test "
+    "failed on it. Triage was perfect and still could not help: you can only triage the failures "
+    "your tests produce. The fix is stronger tests, not better triage.",
+    "pipeline_misrouted": "A failure from a real pipeline run went to the wrong owner. Compare "
+    "its error and log lines with the rule that fired.",
     "mutant_survived": "A planted bug got past every generated test: the suite runs green on a "
     "broken service. Usually a test checks only the status code, not the value the scenario "
     "promises. This is the gap code coverage cannot show.",
@@ -234,6 +243,40 @@ def _code_section(results: dict[str, Any]) -> list[str]:
     ]
 
 
+def _run_section(results: dict[str, Any]) -> list[str]:
+    rt = results["suites"].get("run_and_triage")
+    if rt is None:
+        return []
+    c = rt["counts"]
+    return [
+        "",
+        "## 6. Run and triage",
+        "",
+        f"The {c['tests']} generated tests ran on {c['runs']} release candidates: correct or "
+        "with one planted bug, in a healthy environment or with the gateway down or seed data "
+        f"missing. {c['failures']} failures went to the Failure-Triage agent, and its labels "
+        "became a release decision. Ground truth is what was injected. These failures carry "
+        "clearer signals than the 48-case triage golden set, so expect higher accuracy here.",
+        "",
+        *_metric_table(results, "run_and_triage"),
+        "",
+        *_table(
+            ["Run", "Planted bug", "Environment", "Failed", "Decision", "Expected"],
+            [
+                [
+                    r["id"],
+                    r["bug"] or "none",
+                    r["fault"] or "healthy",
+                    str(r["failed"]),
+                    r["decision"],
+                    r["expected_decision"],
+                ]
+                for r in rt["runs"]
+            ],
+        ),
+    ]
+
+
 def render(results: dict[str, Any]) -> str:
     run = results["run"]
     passed = sum(r["passed"] for r in results["gate"])
@@ -360,6 +403,7 @@ def render(results: dict[str, Any]) -> str:
     ]
     out += _judge_section(results)
     out += _code_section(results)
+    out += _run_section(results)
     out += ["", "## What the evals caught", ""]
     for f in _examples(results):
         out += [f"- **{f['case']}** ({f['type']}): {f['detail']}  ", f"  {EXPLANATIONS[_kind(f)]}"]

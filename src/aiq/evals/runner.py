@@ -20,10 +20,11 @@ import yaml
 from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent
 from aiq.agents.outreach_assistant import CANARY, Member, OutreachAssistant
 from aiq.agents.test_generator import RequirementsToTestAgent, Story, lint_scenario
-from aiq.agents.test_to_code import TestToCodeAgent, run_test
+from aiq.agents.test_to_code import GeneratedTest, TestToCodeAgent, run_test
 from aiq.demo.referral_service import BUGS, ReferralService
 from aiq.evals import scorers
 from aiq.evals.judge import CHECKS, JUDGE_VERSION, ScenarioJudge
+from aiq.execution import execute, release_decision, to_failure
 from aiq.guards.phi_guard import scan
 from aiq.llm import LLM, GuardedLLM, get_judge_provider, get_provider
 from aiq.report import write_reports
@@ -391,6 +392,88 @@ def eval_test_to_code(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str, A
     }
 
 
+# --- run and triage --------------------------------------------------------------------------
+
+
+def eval_run_and_triage(
+    llm: LLM, code_cases: list[dict[str, Any]], data_dir: Path = DATA / "golden"
+) -> dict[str, Any]:
+    """Stage 3: run the stage-2 suite on each release candidate, triage every failure, and turn
+    the triage into a release decision. Scores the triage against the injected cause and the
+    decision against the decision the true causes call for."""
+    agent = FailureTriageAgent(llm)
+    tests = [
+        GeneratedTest(test_name=c["test_name"], code=c["code"])
+        for c in code_cases
+        if c.get("code") and not c.get("refused")
+    ]
+    runs = _load("release_runs.yaml", data_dir)["runs"]
+    y_true, y_pred, cases, findings = [], [], [], []
+    decisions_ok = escaped = 0
+    for spec in runs:
+        results = execute(tests, spec["bug"], spec["fault"])
+        failed = [r for r in results if r.outcome != "pass"]
+        triaged = [agent.run(to_failure(r, spec["id"], spec["fault"])) for r in failed]
+        for r, t in zip(failed, triaged, strict=True):
+            y_true.append(r.expected_category)
+            y_pred.append(t.category)
+            if t.category != r.expected_category:
+                findings.append(
+                    {
+                        "case": f"{spec['id']}/{r.test_name}",
+                        "type": "pipeline_misrouted",
+                        "detail": f"{r.expected_category} triaged as {t.category} via "
+                        f"{t.routed_to} ({t.route_reason}); error {r.message!r}",
+                    }
+                )
+        decision = release_decision([t.category for t in triaged])
+        expected = release_decision([r.expected_category for r in failed])
+        decisions_ok += decision == expected
+        if spec["bug"] and decision.startswith("ship"):
+            escaped += 1
+            findings.append(
+                {
+                    "case": spec["id"],
+                    "type": "escaped_defect",
+                    "detail": f"build with bug {spec['bug']} would ship: no generated test failed",
+                }
+            )
+        cases.append(
+            {
+                "id": spec["id"],
+                "bug": spec["bug"],
+                "fault": spec["fault"],
+                "failed": len(failed),
+                "decision": decision,
+                "expected_decision": expected,
+                "failures": [
+                    {
+                        "test": r.test_name,
+                        "expected": r.expected_category,
+                        "triaged": t.category,
+                        "routed_to": t.routed_to,
+                    }
+                    for r, t in zip(failed, triaged, strict=True)
+                ],
+            }
+        )
+    cm = scorers.classification_metrics(y_true, y_pred, CATEGORIES)
+    metrics = {
+        "triage_accuracy": round(cm["accuracy"], 4),
+        "decision_accuracy": _ratio(decisions_ok, len(runs)),
+        "escaped_defect_count": escaped,
+        "failures_triaged": len(y_true),
+    }
+    return {
+        "metrics": metrics,
+        "counts": {"runs": len(runs), "tests": len(tests), "failures": len(y_true)},
+        "confusion_matrix": cm["confusion_matrix"],
+        "runs": [{k: v for k, v in c.items() if k != "failures"} for c in cases],
+        "findings": findings,
+        "cases": cases,
+    }
+
+
 # --- LLM judge -------------------------------------------------------------------------------
 
 
@@ -563,11 +646,13 @@ def run_all(
     # The same agent without its review-and-fix step: the judge grades both, so the report
     # shows what the repair loop is worth (an ablation, like the guardrails-off safety run).
     without_repair = eval_test_generator(GuardedLLM(provider), golden, repair=False)
+    test_to_code = eval_test_to_code(GuardedLLM(provider), golden)
     suites = {
         "test_generator": test_generator,
         "triage": eval_triage(GuardedLLM(provider), golden),
         "safety": eval_safety(provider, golden),
-        "test_to_code": eval_test_to_code(GuardedLLM(provider), golden),
+        "test_to_code": test_to_code,
+        "run_and_triage": eval_run_and_triage(GuardedLLM(provider), test_to_code["cases"], golden),
         "judge": eval_judge(
             GuardedLLM(judge_provider),
             test_generator["cases"],
