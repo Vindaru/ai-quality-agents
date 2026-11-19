@@ -1,0 +1,11 @@
+# Alert rules for the production monitor (aiq/monitor.py). The reference is the agent's own
+# profile on the triage golden set from the same run. Limits were set from the first baseline;
+# with ten failures a night, one odd failure moves a rate by 10 points, so the limits leave room
+# for that.
+low_confidence: 0.60          # an answer below this confidence counts as unsure
+llm_routed_rate_rise: 0.25    # alert when model routing rises this far above the reference
+max_low_confidence_rate: 0.40
+max_unclassified_rate: 0.10
+max_category_psi: 0.35        # PSI > 0.25 is a real shift; ten-a-night samples are noisier
+review_sample: 5              # unsure failures sent to a person when a day alerts
+regression_tolerance: 0.02    # run-to-run drop in a gated metric that gets flagged

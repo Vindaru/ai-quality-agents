@@ -1,10 +1,10 @@
 {
   "run": {
-    "timestamp": "2026-11-19 15:08 UTC",
+    "timestamp": "2026-11-19 15:25 UTC",
     "model": "mock-heuristic-v1",
     "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "5ad9f8a",
+    "git_sha": "5024027",
     "python": "3.13.18"
   },
   "suites": {
@@ -367,6 +367,192 @@
         }
       ]
     },
+    "test_to_code": {
+      "metrics": {
+        "runnable_rate": 1.0,
+        "unsafe_code_count": 0,
+        "pass_on_correct_rate": 0.9091,
+        "mutation_kill_rate": 0.7778
+      },
+      "counts": {
+        "scenarios": 11,
+        "mutants": 9,
+        "good_tests": 10
+      },
+      "mutants": {
+        "stop_case_sensitive": {
+          "bug": "only upper-case STOP opts out",
+          "killed_by": []
+        },
+        "no_consent_audit": {
+          "bug": "opt-out is not written to consent_audit",
+          "killed_by": [
+            "C03"
+          ]
+        },
+        "sms_ignores_opt_out": {
+          "bug": "SMS is sent to opted-out members",
+          "killed_by": [
+            "C02"
+          ]
+        },
+        "short_phone_accepted": {
+          "bug": "9-digit phone numbers are accepted",
+          "killed_by": [
+            "C07"
+          ]
+        },
+        "wrong_invalid_code": {
+          "bug": "invalid phone numbers return 400 instead of 422",
+          "killed_by": [
+            "C07"
+          ]
+        },
+        "no_e164": {
+          "bug": "phones are stored as typed, not normalised to E.164",
+          "killed_by": []
+        },
+        "unknown_referral_200": {
+          "bug": "status update for an unknown referral returns 200",
+          "killed_by": [
+            "C09"
+          ]
+        },
+        "expired_token_accepted": {
+          "bug": "expired partner tokens are accepted",
+          "killed_by": [
+            "C10"
+          ]
+        },
+        "no_referral_audit": {
+          "bug": "status changes are not written to referral_audit",
+          "killed_by": [
+            "C11"
+          ]
+        }
+      },
+      "findings": [
+        {
+          "case": "C05",
+          "type": "test_fails_on_correct_service",
+          "detail": "test_invalid_phone_rejected fails on the correct service: assert r.status == 400 (line 3)"
+        },
+        {
+          "case": "stop_case_sensitive",
+          "type": "mutant_survived",
+          "detail": "no generated test fails when only upper-case STOP opts out"
+        },
+        {
+          "case": "no_e164",
+          "type": "mutant_survived",
+          "detail": "no generated test fails when phones are stored as typed, not normalised to E.164"
+        }
+      ]
+    },
+    "run_and_triage": {
+      "metrics": {
+        "triage_accuracy": 1.0,
+        "decision_accuracy": 1.0,
+        "escaped_defect_count": 1,
+        "failures_triaged": 26
+      },
+      "counts": {
+        "runs": 7,
+        "tests": 11,
+        "failures": 26
+      },
+      "confusion_matrix": {
+        "product_bug": {
+          "product_bug": 3,
+          "automation_issue": 0,
+          "environment": 0,
+          "test_data": 0
+        },
+        "automation_issue": {
+          "product_bug": 0,
+          "automation_issue": 5,
+          "environment": 0,
+          "test_data": 0
+        },
+        "environment": {
+          "product_bug": 0,
+          "automation_issue": 0,
+          "environment": 11,
+          "test_data": 0
+        },
+        "test_data": {
+          "product_bug": 0,
+          "automation_issue": 0,
+          "environment": 0,
+          "test_data": 7
+        }
+      },
+      "runs": [
+        {
+          "id": "R1",
+          "bug": null,
+          "fault": null,
+          "failed": 1,
+          "decision": "ship_with_test_fix",
+          "expected_decision": "ship_with_test_fix"
+        },
+        {
+          "id": "R2",
+          "bug": "unknown_referral_200",
+          "fault": null,
+          "failed": 2,
+          "decision": "block",
+          "expected_decision": "block"
+        },
+        {
+          "id": "R3",
+          "bug": "no_consent_audit",
+          "fault": null,
+          "failed": 2,
+          "decision": "block",
+          "expected_decision": "block"
+        },
+        {
+          "id": "R4",
+          "bug": "expired_token_accepted",
+          "fault": null,
+          "failed": 2,
+          "decision": "block",
+          "expected_decision": "block"
+        },
+        {
+          "id": "R5",
+          "bug": null,
+          "fault": "gateway_down",
+          "failed": 11,
+          "decision": "rerun",
+          "expected_decision": "rerun"
+        },
+        {
+          "id": "R6",
+          "bug": null,
+          "fault": "seed_missing",
+          "failed": 7,
+          "decision": "rerun",
+          "expected_decision": "rerun"
+        },
+        {
+          "id": "R7",
+          "bug": "no_e164",
+          "fault": null,
+          "failed": 1,
+          "decision": "ship_with_test_fix",
+          "expected_decision": "ship_with_test_fix"
+        }
+      ],
+      "findings": [
+        {
+          "case": "R7",
+          "type": "escaped_defect",
+          "detail": "build with bug no_e164 would ship: no generated test failed"
+        }
+      ]
+    },
     "judge": {
       "metrics": {
         "agreement": 0.7188,
@@ -460,6 +646,195 @@
           "detail": "human pass, judge fail; checks disagreed: tests_criterion, observable_outcome"
         }
       ]
+    },
+    "monitoring": {
+      "metrics": {
+        "drift_day_recall": 1.0,
+        "false_alarm_days": 0,
+        "accuracy_on_normal_days": 0.7667,
+        "accuracy_on_drift_days": 0.8,
+        "model_calls": 339,
+        "invalid_output_rate": 0.0
+      },
+      "counts": {
+        "days": 6,
+        "failures": 60
+      },
+      "reference": {
+        "failures": 48,
+        "llm_routed_rate": 0.4375,
+        "low_confidence_rate": 0.125,
+        "unclassified_rate": 0.0,
+        "mix": {
+          "product_bug": 0.3542,
+          "automation_issue": 0.1875,
+          "environment": 0.2083,
+          "test_data": 0.25,
+          "unclassified": 0.0
+        }
+      },
+      "days": [
+        {
+          "day": 1,
+          "note": "normal nightly run",
+          "drift": "none",
+          "alerts": [],
+          "review_queue": [],
+          "accuracy": 0.7,
+          "failures": 10,
+          "llm_routed_rate": 0.5,
+          "low_confidence_rate": 0.1,
+          "unclassified_rate": 0.0,
+          "psi": 0.1066
+        },
+        {
+          "day": 2,
+          "note": "normal nightly run",
+          "drift": "none",
+          "alerts": [],
+          "review_queue": [],
+          "accuracy": 0.8,
+          "failures": 10,
+          "llm_routed_rate": 0.4,
+          "low_confidence_rate": 0.2,
+          "unclassified_rate": 0.0,
+          "psi": 0.0179
+        },
+        {
+          "day": 3,
+          "note": "normal nightly run",
+          "drift": "none",
+          "alerts": [],
+          "review_queue": [],
+          "accuracy": 0.8,
+          "failures": 10,
+          "llm_routed_rate": 0.5,
+          "low_confidence_rate": 0.1,
+          "unclassified_rate": 0.0,
+          "psi": 0.1962
+        },
+        {
+          "day": 4,
+          "note": "test runners moved to Kubernetes and the UI suite to Playwright",
+          "drift": "new_failure_pattern",
+          "alerts": [
+            "model routing 70% vs 44% on the golden set: failures the rules do not recognise"
+          ],
+          "review_queue": [
+            "S34",
+            "S35",
+            "S36"
+          ],
+          "accuracy": 0.7,
+          "failures": 10,
+          "llm_routed_rate": 0.7,
+          "low_confidence_rate": 0.3,
+          "unclassified_rate": 0.0,
+          "psi": 0.1773
+        },
+        {
+          "day": 5,
+          "note": "test runners moved to Kubernetes and the UI suite to Playwright",
+          "drift": "new_failure_pattern",
+          "alerts": [
+            "model routing 80% vs 44% on the golden set: failures the rules do not recognise",
+            "50% of answers below confidence threshold"
+          ],
+          "review_queue": [
+            "S41",
+            "S43",
+            "S44",
+            "S47",
+            "S50"
+          ],
+          "accuracy": 0.7,
+          "failures": 10,
+          "llm_routed_rate": 0.8,
+          "low_confidence_rate": 0.5,
+          "unclassified_rate": 0.0,
+          "psi": 0.2606
+        },
+        {
+          "day": 6,
+          "note": "a bad deploy reached staging",
+          "drift": "category_shift",
+          "alerts": [
+            "category mix shifted (PSI 0.51), mostly toward product_bug"
+          ],
+          "review_queue": [
+            "S55"
+          ],
+          "accuracy": 1.0,
+          "failures": 10,
+          "llm_routed_rate": 0.5,
+          "low_confidence_rate": 0.1,
+          "unclassified_rate": 0.0,
+          "psi": 0.5075
+        }
+      ],
+      "findings": [],
+      "tracing": {
+        "failure_triage": {
+          "calls": 58,
+          "input_tokens": 8272,
+          "output_tokens": 1097,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "e26eedee392f"
+          ]
+        },
+        "outreach_reply": {
+          "calls": 39,
+          "input_tokens": 6808,
+          "output_tokens": 1733,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "2540bcc2aef3"
+          ]
+        },
+        "scenario_judge": {
+          "calls": 152,
+          "input_tokens": 68724,
+          "output_tokens": 10032,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "2d43181ef45c"
+          ]
+        },
+        "test_codegen": {
+          "calls": 11,
+          "input_tokens": 6497,
+          "output_tokens": 797,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "a140efafac74"
+          ]
+        },
+        "test_generation": {
+          "calls": 28,
+          "input_tokens": 12686,
+          "output_tokens": 11466,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "6b07333e37be"
+          ]
+        },
+        "test_repair": {
+          "calls": 51,
+          "input_tokens": 11836,
+          "output_tokens": 4701,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "7a443ff845ae"
+          ]
+        }
+      }
     }
   },
   "gate": [
@@ -581,6 +956,96 @@
       "passed": true
     },
     {
+      "suite": "test_to_code",
+      "metric": "runnable_rate",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "unsafe_code_count",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "pass_on_correct_rate",
+      "value": 0.9091,
+      "bound": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "mutation_kill_rate",
+      "value": 0.7778,
+      "bound": {
+        "min": 0.75
+      },
+      "passed": true
+    },
+    {
+      "suite": "run_and_triage",
+      "metric": "triage_accuracy",
+      "value": 1.0,
+      "bound": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "suite": "run_and_triage",
+      "metric": "decision_accuracy",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "run_and_triage",
+      "metric": "escaped_defect_count",
+      "value": 1,
+      "bound": {
+        "max": 1
+      },
+      "passed": true
+    },
+    {
+      "suite": "monitoring",
+      "metric": "drift_day_recall",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "monitoring",
+      "metric": "false_alarm_days",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "monitoring",
+      "metric": "invalid_output_rate",
+      "value": 0.0,
+      "bound": {
+        "max": 0.02
+      },
+      "passed": true
+    },
+    {
       "suite": "judge",
       "metric": "judge_error_count",
       "value": 0,
@@ -609,5 +1074,363 @@
     }
   ],
   "judge_trusted": false,
+  "history": {
+    "previous": {
+      "timestamp": "2026-11-19 15:15 UTC",
+      "git_sha": "3242492",
+      "model": "mock-heuristic-v1",
+      "metrics": {
+        "test_generator": {
+          "schema_validity": 0.9836,
+          "criteria_coverage": 0.9815,
+          "traceability": 1.0,
+          "duplicate_rate": 0.0167,
+          "expected_scenario_recall": 0.8679,
+          "lint_issue_rate": 0.4667,
+          "repair_success_rate": 0.451
+        },
+        "triage": {
+          "accuracy": 0.8542,
+          "llm_routed_rate": 0.4375
+        },
+        "safety": {
+          "phi_leak_count": 0,
+          "phi_in_prompt_count": 0,
+          "injection_resistance": 1.0,
+          "refusal_correctness": 0.9643
+        },
+        "test_to_code": {
+          "runnable_rate": 1.0,
+          "unsafe_code_count": 0,
+          "pass_on_correct_rate": 0.9091,
+          "mutation_kill_rate": 0.7778
+        },
+        "run_and_triage": {
+          "triage_accuracy": 1.0,
+          "decision_accuracy": 1.0,
+          "escaped_defect_count": 1
+        },
+        "judge": {
+          "judge_error_count": 0,
+          "agreement": 0.7188,
+          "cohen_kappa": 0.4462,
+          "scenario_pass_rate": 0.4167
+        }
+      },
+      "backfilled": true
+    },
+    "regressions": [],
+    "recent": [
+      {
+        "timestamp": "2026-10-16 21:20 UTC",
+        "git_sha": "d3540bc",
+        "model": "mock-heuristic-v1",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8491
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          }
+        },
+        "backfilled": true
+      },
+      {
+        "timestamp": "2026-11-19 14:50 UTC",
+        "git_sha": "722b818",
+        "model": "mock-heuristic-v1",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8491
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.15
+          }
+        },
+        "backfilled": true
+      },
+      {
+        "timestamp": "2026-11-19 15:08 UTC",
+        "git_sha": "5ad9f8a",
+        "model": "mock-heuristic-v1",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8679,
+            "lint_issue_rate": 0.4667,
+            "repair_success_rate": 0.451
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.4167
+          }
+        },
+        "backfilled": true
+      },
+      {
+        "timestamp": "2026-11-19 15:12 UTC",
+        "git_sha": "1f3f54e",
+        "model": "mock-heuristic-v1",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8679,
+            "lint_issue_rate": 0.4667,
+            "repair_success_rate": 0.451
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "test_to_code": {
+            "runnable_rate": 1.0,
+            "unsafe_code_count": 0,
+            "pass_on_correct_rate": 0.9091,
+            "mutation_kill_rate": 0.7778
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.4167
+          }
+        },
+        "backfilled": true
+      },
+      {
+        "timestamp": "2026-11-19 15:15 UTC",
+        "git_sha": "3242492",
+        "model": "mock-heuristic-v1",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8679,
+            "lint_issue_rate": 0.4667,
+            "repair_success_rate": 0.451
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "test_to_code": {
+            "runnable_rate": 1.0,
+            "unsafe_code_count": 0,
+            "pass_on_correct_rate": 0.9091,
+            "mutation_kill_rate": 0.7778
+          },
+          "run_and_triage": {
+            "triage_accuracy": 1.0,
+            "decision_accuracy": 1.0,
+            "escaped_defect_count": 1
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.4167
+          }
+        },
+        "backfilled": true
+      },
+      {
+        "timestamp": "2026-11-19 15:22 UTC",
+        "git_sha": "5024027",
+        "model": "mock-heuristic-v1",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8679,
+            "lint_issue_rate": 0.4667,
+            "repair_success_rate": 0.451
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "test_to_code": {
+            "runnable_rate": 1.0,
+            "unsafe_code_count": 0,
+            "pass_on_correct_rate": 0.9091,
+            "mutation_kill_rate": 0.7778
+          },
+          "run_and_triage": {
+            "triage_accuracy": 1.0,
+            "decision_accuracy": 1.0,
+            "escaped_defect_count": 1
+          },
+          "monitoring": {
+            "drift_day_recall": 1.0,
+            "false_alarm_days": 0,
+            "invalid_output_rate": 0.0
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.4167
+          }
+        }
+      },
+      {
+        "git_sha": "5024027",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8679,
+            "lint_issue_rate": 0.4667,
+            "repair_success_rate": 0.451
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "test_to_code": {
+            "runnable_rate": 1.0,
+            "unsafe_code_count": 0,
+            "pass_on_correct_rate": 0.9091,
+            "mutation_kill_rate": 0.7778
+          },
+          "run_and_triage": {
+            "triage_accuracy": 1.0,
+            "decision_accuracy": 1.0,
+            "escaped_defect_count": 1
+          },
+          "monitoring": {
+            "drift_day_recall": 1.0,
+            "false_alarm_days": 0,
+            "invalid_output_rate": 0.0
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.4167
+          }
+        }
+      }
+    ],
+    "current": {
+      "test_generator": {
+        "schema_validity": 0.9836,
+        "criteria_coverage": 0.9815,
+        "traceability": 1.0,
+        "duplicate_rate": 0.0167,
+        "expected_scenario_recall": 0.8679,
+        "lint_issue_rate": 0.4667,
+        "repair_success_rate": 0.451
+      },
+      "triage": {
+        "accuracy": 0.8542,
+        "llm_routed_rate": 0.4375
+      },
+      "safety": {
+        "phi_leak_count": 0,
+        "phi_in_prompt_count": 0,
+        "injection_resistance": 1.0,
+        "refusal_correctness": 0.9643
+      },
+      "test_to_code": {
+        "runnable_rate": 1.0,
+        "unsafe_code_count": 0,
+        "pass_on_correct_rate": 0.9091,
+        "mutation_kill_rate": 0.7778
+      },
+      "run_and_triage": {
+        "triage_accuracy": 1.0,
+        "decision_accuracy": 1.0,
+        "escaped_defect_count": 1
+      },
+      "monitoring": {
+        "drift_day_recall": 1.0,
+        "false_alarm_days": 0,
+        "invalid_output_rate": 0.0
+      },
+      "judge": {
+        "judge_error_count": 0,
+        "agreement": 0.7188,
+        "cohen_kappa": 0.4462,
+        "scenario_pass_rate": 0.4167
+      }
+    }
+  },
   "passed": true
 }

@@ -32,6 +32,53 @@ mean, and how to extend them.
 | lint_issue_rate | scenarios still failing lint after the repair round / valid scenarios |
 | model_calls | generation calls plus repair calls: the cost of the repair loop |
 
+### Test-to-Code
+
+| Metric | Definition |
+|---|---|
+| runnable_rate | answers that parse, are exactly one `test_*(client)` function and pass the safety allowlist / scenarios |
+| unsafe_code_count | answers refused for an import, `exec`/`eval`/`open`, dunder access or `global`. Gated at zero |
+| pass_on_correct_rate | runnable tests that pass on the correct demo service / runnable tests. A failure here is a false alarm |
+| mutation_kill_rate | mutants (copies of the service with one planted bug) that at least one passing test fails on / all mutants |
+
+Only tests that pass on the correct service take part in the kill score; otherwise a test that
+always fails would kill every mutant. A unit test proves every mutant really changes behaviour,
+so no mutant is unkillable. A surviving mutant names the behaviour no generated test checks.
+
+### Run and triage
+
+| Metric | Definition |
+|---|---|
+| triage_accuracy | pipeline failures whose triage category matches the injected cause / failures |
+| decision_accuracy | release runs whose decision (from the triaged categories) matches the decision the true causes call for / runs |
+| escaped_defect_count | runs with a planted bug that end in a ship decision because no test failed |
+
+Ground truth comes from what was injected: an environment fault that broke the test is that
+fault's category; an assertion that also fails on the known-good baseline is an automation issue;
+an assertion that fails only on the candidate is a product bug; a crash in the test's own code is
+an automation issue. Decisions: any product bug blocks; an environment or test-data failure means
+rerun; only broken tests means ship with a test fix; no failures means ship.
+
+### Monitoring
+
+| Metric | Definition |
+|---|---|
+| drift_day_recall | simulated nights with known drift on which at least one alert fired / drift nights |
+| false_alarm_days | normal nights on which an alert fired |
+| invalid_output_rate | traced model answers that did not parse as JSON / all traced calls |
+
+Signals per night (no labels): `llm_routed_rate` (rules could not decide), `low_confidence_rate`
+(answers below 0.60), `unclassified_rate`, and the PSI between the night's predicted category mix
+and the golden-set mix. The reference is the agent's profile on the triage golden set from the
+same run, so a model or prompt change moves the reference too. Limits live in
+`data/monitor/alerts.yaml`. With ten failures a night one failure moves a rate by ten points, so
+the PSI limit is 0.35 rather than the usual 0.25; on real traffic, use a longer window instead.
+
+Run-to-run regression: each run's gated metrics are appended to `reports/history.jsonl` (one line
+per commit and model). A metric that moved the wrong way by more than `regression_tolerance`
+(0.02) since the previous run is flagged in the report. Direction comes from the threshold: `min`
+metrics should not fall, `max` metrics should not rise.
+
 ### Failure-Triage
 
 | Metric | Definition |

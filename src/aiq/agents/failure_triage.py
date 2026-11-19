@@ -78,6 +78,12 @@ RULES: list[Rule] = [
         "missing or conflicting test data",
     ),
     Rule(
+        "automation_issue",
+        re.compile(r"also fails on the (?:baseline|last known-good) build", re.I),
+        0.85,
+        "the same assertion fails on a build where it used to pass: the test is wrong",
+    ),
+    Rule(
         "product_bug",
         re.compile(r"Internal Server Error|HTTP 500"),
         0.85,
