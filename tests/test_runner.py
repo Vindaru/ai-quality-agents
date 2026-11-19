@@ -18,7 +18,7 @@ def results():
 
 
 def test_runs_every_suite_and_passes_the_gate_on_the_mock(results):
-    assert set(results["suites"]) == {"test_generator", "triage", "safety", "judge"}
+    assert set(results["suites"]) == {"test_generator", "triage", "safety", "judge", "test_to_code"}
     assert results["passed"], [r for r in results["gate"] if not r["passed"]]
     assert results["run"]["offline_mock"] is True
 

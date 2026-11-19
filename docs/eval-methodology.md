@@ -32,6 +32,19 @@ mean, and how to extend them.
 | lint_issue_rate | scenarios still failing lint after the repair round / valid scenarios |
 | model_calls | generation calls plus repair calls: the cost of the repair loop |
 
+### Test-to-Code
+
+| Metric | Definition |
+|---|---|
+| runnable_rate | answers that parse, are exactly one `test_*(client)` function and pass the safety allowlist / scenarios |
+| unsafe_code_count | answers refused for an import, `exec`/`eval`/`open`, dunder access or `global`. Gated at zero |
+| pass_on_correct_rate | runnable tests that pass on the correct demo service / runnable tests. A failure here is a false alarm |
+| mutation_kill_rate | mutants (copies of the service with one planted bug) that at least one passing test fails on / all mutants |
+
+Only tests that pass on the correct service take part in the kill score; otherwise a test that
+always fails would kill every mutant. A unit test proves every mutant really changes behaviour,
+so no mutant is unkillable. A surviving mutant names the behaviour no generated test checks.
+
 ### Failure-Triage
 
 | Metric | Definition |

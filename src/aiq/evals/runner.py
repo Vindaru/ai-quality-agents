@@ -20,6 +20,8 @@ import yaml
 from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent
 from aiq.agents.outreach_assistant import CANARY, Member, OutreachAssistant
 from aiq.agents.test_generator import RequirementsToTestAgent, Story, lint_scenario
+from aiq.agents.test_to_code import TestToCodeAgent, run_test
+from aiq.demo.referral_service import BUGS, ReferralService
 from aiq.evals import scorers
 from aiq.evals.judge import CHECKS, JUDGE_VERSION, ScenarioJudge
 from aiq.guards.phi_guard import scan
@@ -321,6 +323,74 @@ def eval_safety(provider: LLM, data_dir: Path = DATA / "golden") -> dict[str, An
     }
 
 
+# --- test to code ----------------------------------------------------------------------------
+
+
+def eval_test_to_code(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str, Any]:
+    """Generate a test per approved scenario, run each against the correct demo service and
+    against every mutant. A test only counts toward the kill score if it passes on the correct
+    service: a test that always fails would "kill" every mutant and prove nothing."""
+    agent = TestToCodeAgent(llm)
+    scenarios = _load("test_to_code.yaml", data_dir)["scenarios"]
+    cases, findings, good_tests = [], [], []
+    for item in scenarios:
+        result = agent.run(item["id"], item["criterion"], item["scenario"])
+        case: dict[str, Any] = {
+            "id": item["id"],
+            "test_name": result.test.test_name if result.test else None,
+            "code": result.test.code if result.test else None,
+            "refused": result.problem,
+        }
+        if not result.runnable:
+            findings.append({"case": item["id"], "type": "code_refused", "detail": result.problem})
+            cases.append(case)
+            continue
+        outcome, message = run_test(result.test, ReferralService())
+        case["on_correct_service"] = outcome
+        if outcome != "pass":
+            findings.append(
+                {
+                    "case": item["id"],
+                    "type": "test_fails_on_correct_service",
+                    "detail": f"{result.test.test_name} {outcome}s on the correct service"
+                    + (f": {message}" if message else ""),
+                }
+            )
+        else:
+            case["kills"] = [
+                bug for bug in BUGS if run_test(result.test, ReferralService(bug))[0] != "pass"
+            ]
+            good_tests.append(case)
+        cases.append(case)
+
+    killed_by = {bug: [c["id"] for c in good_tests if bug in c["kills"]] for bug in BUGS}
+    for bug, killers in killed_by.items():
+        if not killers:
+            findings.append(
+                {
+                    "case": bug,
+                    "type": "mutant_survived",
+                    "detail": f"no generated test fails when {BUGS[bug]}",
+                }
+            )
+    runnable = [c for c in cases if not c["refused"]]
+    metrics = {
+        "runnable_rate": _ratio(len(runnable), len(cases)),
+        "unsafe_code_count": sum(
+            c["refused"].startswith(("imports", "use of", "access to", "global")) for c in cases
+        ),
+        "pass_on_correct_rate": _ratio(len(good_tests), len(runnable)),
+        "mutation_kill_rate": _ratio(sum(bool(k) for k in killed_by.values()), len(BUGS)),
+    }
+    return {
+        "metrics": metrics,
+        "counts": {"scenarios": len(cases), "mutants": len(BUGS), "good_tests": len(good_tests)},
+        "mutants": {bug: {"bug": BUGS[bug], "killed_by": k} for bug, k in killed_by.items()},
+        "findings": findings,
+        "cases": cases,
+    }
+
+
 # --- LLM judge -------------------------------------------------------------------------------
 
 
@@ -497,6 +567,7 @@ def run_all(
         "test_generator": test_generator,
         "triage": eval_triage(GuardedLLM(provider), golden),
         "safety": eval_safety(provider, golden),
+        "test_to_code": eval_test_to_code(GuardedLLM(provider), golden),
         "judge": eval_judge(
             GuardedLLM(judge_provider),
             test_generator["cases"],
