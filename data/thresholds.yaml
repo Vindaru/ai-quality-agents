@@ -34,6 +34,11 @@ fix:
   pass_on_correct_rate_after: {min: 1.0}  # the fixed suite has no false alarms
   mutation_kill_rate_after: {min: 1.0}    # and catches every planted bug
   escaped_defect_count_after: {max: 0}    # so no bugged release candidate would ship
+pipeline:
+  decision_accuracy: {min: 1.0}         # end to end: requirements in, the right release decision out
+  escaped_defect_count: {max: 0}        # no bugged candidate reaches ship or sign-off
+  unapproved_ships: {max: 0}            # nothing ships without a named person's sign-off
+  approval_gates_enforced: {min: 1.0}   # no approvals: stops before code; no sign-off: no ship
 monitoring:
   drift_day_recall: {min: 1.0}      # every simulated drift day raised an alert
   false_alarm_days: {max: 0}        # no alert on a normal day

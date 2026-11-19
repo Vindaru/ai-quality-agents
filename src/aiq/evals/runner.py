@@ -29,6 +29,7 @@ from aiq.execution import execute, release_decision, to_failure
 from aiq.guards.phi_guard import scan
 from aiq.llm import LLM, GuardedLLM, get_judge_provider, get_provider
 from aiq.monitor import compare_runs, monitor_stream, profile
+from aiq.pipeline import Pipeline, load_approvals
 from aiq.report import write_reports
 from aiq.tracing import Tracer, TracingLLM, summarize
 
@@ -668,6 +669,78 @@ def eval_fix(
     }
 
 
+# --- pipeline -------------------------------------------------------------------------------
+
+
+def eval_pipeline(llm: LLM, data_dir: Path = DATA) -> dict[str, Any]:
+    """Stage 6: run the whole chain on the demo stories and every release candidate. Scores the
+    final decision against the one the injected causes call for, and checks that both human
+    gates hold: no approvals means the pipeline stops before writing code, and no sign-off means
+    nothing ships."""
+    approvals = load_approvals(data_dir / "pipeline" / "approvals.yaml")
+    runs = _load("release_runs.yaml", data_dir / "golden")["runs"]
+    pipeline = Pipeline(llm, approvals, data_dir=data_dir)
+    build = pipeline.build()
+    findings: list[dict[str, Any]] = []
+    rows = []
+    for spec in runs:
+        release = pipeline.release(build, spec)
+        expected = release_decision([f["expected"] for f in release.failures])
+        rows.append(
+            {
+                "id": spec["id"],
+                "bug": spec["bug"],
+                "fault": spec["fault"],
+                "decision": release.decision,
+                "expected_decision": expected,
+                "status": release.status,
+                "signed_off_by": release.signed_off_by,
+            }
+        )
+        if release.decision != expected:
+            findings.append(
+                {
+                    "case": spec["id"],
+                    "type": "pipeline_wrong_decision",
+                    "detail": f"{release.decision}, expected {expected}",
+                }
+            )
+    # Gate checks: the same chain with no human decisions at all.
+    unreviewed = Pipeline(llm, {}, data_dir=data_dir).build()
+    stops_for_review = unreviewed.status == "awaiting_scenario_approval" and not unreviewed.suite
+    no_signoff = Pipeline(llm, {"scenarios": approvals.get("scenarios")}, data_dir=data_dir)
+    clean = next(r for r in runs if not r["bug"] and not r["fault"])
+    holds_for_signoff = no_signoff.release(no_signoff.build(), clean).status == "awaiting_signoff"
+    unapproved = sum(
+        r["status"] == "shipped" and r["id"] not in (approvals.get("release") or {}) for r in rows
+    )
+    metrics = {
+        "decision_accuracy": _ratio(
+            sum(r["decision"] == r["expected_decision"] for r in rows), len(rows)
+        ),
+        "escaped_defect_count": sum(
+            bool(r["bug"]) and r["status"] in {"shipped", "awaiting_signoff"} for r in rows
+        ),
+        "unapproved_ships": unapproved,
+        "approval_gates_enforced": _ratio(int(stops_for_review) + int(holds_for_signoff), 2),
+        "scenarios_pending_without_approvals": len(unreviewed.pending),
+    }
+    return {
+        "metrics": metrics,
+        "counts": {
+            "scenarios": len(build.scenarios),
+            "approved": sum(i.status == "approved" for i in build.scenarios),
+            "rejected": sum(i.status == "rejected" for i in build.scenarios),
+            "tests": len(build.suite),
+            "runs": len(rows),
+        },
+        "suite": {"before": build.before, "after": build.after},
+        "runs": rows,
+        "findings": findings,
+        "cases": rows,
+    }
+
+
 # --- monitoring ------------------------------------------------------------------------------
 
 
@@ -851,6 +924,7 @@ def run_all(
         "test_to_code": test_to_code,
         "run_and_triage": eval_run_and_triage(GuardedLLM(provider), test_to_code["cases"], golden),
         "fix": eval_fix(GuardedLLM(provider), test_to_code["cases"], golden),
+        "pipeline": eval_pipeline(provider, data_dir),
         "judge": eval_judge(
             GuardedLLM(judge_provider),
             test_generator["cases"],

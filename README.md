@@ -23,10 +23,22 @@ calibrated against human labels before its grades are allowed to gate anything. 
 feature needs regression tests just like code does, and "it looked fine when I tried it" is not a
 test. The domain is healthcare member outreach and referrals, and all data is synthetic.
 
+**One command runs the whole chain**, requirements to release decision, with a person at the two
+points where a machine should not decide alone:
+
+```
+user story -> scenarios (review-and-fix) -> [approve scenarios] -> tests (safety-checked)
+  -> evaluate (mutation testing) -> fix (verified patches) -> run on the release candidate
+  -> triage failures -> block / rerun / [sign off to ship]       ... traced and monitored
+```
+
+`python -m aiq.pipeline run --candidate R1` writes
+[reports/release_readiness.md](reports/release_readiness.md).
+
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:31 UTC,
-quality gate **passed, 31/31 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:46 UTC,
+quality gate **passed, 35/35 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -49,9 +61,12 @@ Full report with the confusion matrix, failure examples and limitations:
 | Fix agent | mutation_kill_rate after the fix | 100.0% (was 77.8%) | ≥ 100.0% |
 | Fix agent | escaped_defect_count after the fix | 0 | ≤ 0 |
 | Fix agent | kills_lost (a patch that weakened a test) | 0 | ≤ 0 |
+| Pipeline | end-to-end release decisions (7 candidates) | 7 of 7 | 100% |
+| Pipeline | bugged candidates that reach ship or sign-off | 0 | ≤ 0 |
+| Pipeline | approval gates enforced (no approvals: stop; no sign-off: no ship) | 2 of 2 | 100% |
 | Monitoring | drift nights alerted (new failure pattern x2, bad deploy) | 3 of 3 | 100% |
 | Monitoring | false alarms on normal nights | 0 of 3 | ≤ 0 |
-| Monitoring | invalid model output, over 343 traced calls | 0.0% | ≤ 2.0% |
+| Monitoring | invalid model output, over 416 traced calls | 0.0% | ≤ 2.0% |
 | Failure-Triage | accuracy | 85.4% | ≥ 80.0% |
 | Failure-Triage | accuracy 95% CI | 72.8% to 92.8% | not gated |
 | Failure-Triage | llm_routed_rate | 43.8% | ≤ 50.0% |
@@ -139,6 +154,7 @@ PHI is zero.
 make setup   # Python 3.11 virtualenv + dev tools
 make test    # unit tests (scorers, guard, agents, runner, report)
 make eval    # run all golden sets, write reports/, enforce the quality gate
+make pipeline CANDIDATE=R2   # run the whole chain on one release candidate
 ```
 
 No API key is needed: by default everything runs against a deterministic mock. To evaluate a real
@@ -176,6 +192,11 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   it was injected: a planted bug, a broken environment, or a test that also fails on the known-good
   baseline. Triage is scored against that, and its labels are turned into a release decision so
   a triage mistake shows up as what it costs (a regression retried instead of blocked).
+- **People at the two irreversible points.** A scenario still flagged after repair needs a named
+  reviewer before any code is written from it (`data/pipeline/approvals.yaml`); with nothing
+  approved the pipeline stops and lists what to review. A ship decision needs a sign-off for that
+  candidate and that exact decision. Block and rerun need none, because they are the safe
+  direction. Both gates are tested by running the chain without the human decisions.
 - **The fixer does not grade its own fix.** A patch replaces one existing test and is kept only
   if it passes the safety check, passes on the correct service, still catches every bug the old
   test caught, and solves its problem (a repaired test must catch something; a strengthened test
@@ -220,6 +241,7 @@ More detail on metric definitions and how to extend the sets:
 src/aiq/llm.py                    LLM interface, deterministic mock, optional real provider, PHI-guarded wrapper
 src/aiq/agents/                   test_generator, test_to_code, test_fixer, failure_triage, outreach_assistant
 src/aiq/execution.py              stage 3: run a suite on a release candidate, build Failure records, release decision
+src/aiq/pipeline.py               stage 6: the orchestrator, approval gates and the release-readiness report
 src/aiq/tracing.py                stage 4: OpenTelemetry GenAI-style spans for every model call
 src/aiq/monitor.py                stage 4: label-free drift signals, PSI, alerts, run-to-run regressions
 src/aiq/demo/referral_service.py  the system under test for generated tests, its API contract and 9 mutants
@@ -231,6 +253,7 @@ src/aiq/report.py                 writes reports/eval_report.md and reports/eval
 data/golden/                      14 stories, 48 labeled failures, 28 safety prompts (all synthetic)
 data/golden/test_to_code.yaml     11 approved scenarios for the three stories the demo service implements
 data/golden/release_runs.yaml     7 release candidates (planted bug x environment fault)
+data/pipeline/approvals.yaml      the reviewer's scenario approvals and release sign-offs
 data/monitor/                     a simulated week of nightly failures with known drift, and the alert limits
 reports/history.jsonl             gated metrics of every committed run
 data/judge/calibration.yaml       32 human-labeled scenarios the judge is calibrated against
@@ -239,12 +262,8 @@ data/thresholds.yaml              the quality gate, including the judge's trust 
 
 ## What I'd add next
 
-This repo is growing into an end-to-end pipeline: requirements → test cases → code → run and
-triage → monitor → fix. Next stages, one PR each:
-
-- **Orchestrate:** one command that runs the whole chain with human approval points and writes a
-  release-readiness report.
-
+- **Approvals from a PR review** instead of a YAML file: the pipeline posts the pending list,
+  and an approving review is the sign-off.
 - **Judge on a real model:** run the calibration with `AIQ_JUDGE_MODEL` set to a real model and
   commit the report; a different model family from the agent avoids self-preference.
 - **Judge for triage evidence and outreach tone:** the same calibrate-then-gate pattern.

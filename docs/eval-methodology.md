@@ -72,6 +72,17 @@ rerun; only broken tests means ship with a test fix; no failures means ship.
 A patch is verified, not trusted: safe, same test name, passes on the correct service, no lost
 kills, and it solves its problem. One retry with the rejection reason as feedback.
 
+### End-to-end pipeline
+
+| Metric | Definition |
+|---|---|
+| decision_accuracy | release candidates whose pipeline decision (from the triage agent's labels) matches the decision the injected causes call for / candidates |
+| escaped_defect_count | candidates with a planted bug whose final status is shipped or awaiting sign-off |
+| unapproved_ships | candidates shipped without a sign-off entry in the approvals file |
+| approval_gates_enforced | of two checks, how many hold: with no approvals the chain stops before writing code; with no sign-off the clean candidate is not shipped |
+
+The pipeline runs on the three stories the demo service implements (US-01, US-04, US-07).
+
 ### Monitoring
 
 | Metric | Definition |
