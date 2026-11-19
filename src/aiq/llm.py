@@ -330,3 +330,62 @@ def _mock_scenario_judge(system: str, prompt: str) -> str:
             "verdict": "pass" if all(checks.values()) else "fail",
         }
     )
+
+
+_QUANTITY = re.compile(
+    r"\b(?:at most|at least|within|more than|less than|fewer than|longer than)?\s*"
+    r"(\d[\d,]*)\s*(miles?|minutes?|hours?|days?|times|digits?|characters?|members?)?",
+    re.I,
+)
+_REJECTED = re.compile(r"^(?:an? |the )?(.+?) (is|are) (rejected|ignored)\b(.*)$", re.I)
+_RETURNS = re.compile(r"^(?:an? |the )?(.+?) returns? (.+)$", re.I)
+_RECORDED = re.compile(
+    r"^(?:an? |the |every |each )?(.+?) (?:is|are) (recorded|stored|written|persisted) (.+)$", re.I
+)
+_CONDITION = re.compile(r"^(?:when|if|after|before)\s+.+?,\s*(.+)$", re.I)
+
+
+def _lower_first(text: str) -> str:
+    """Lower-case a sentence's first letter, but leave acronyms such as ZIP alone."""
+    return text if text[:2].isupper() else text[:1].lower() + text[1:]
+
+
+@mock_behavior("test_repair")
+def _mock_test_repair(system: str, prompt: str) -> str:
+    # A stand-in for a model fixing one flagged scenario. Like a real model it fixes the
+    # problems it was told about when the criterion gives it something to work with, and
+    # leaves the rest alone, so some repairs fail and the metrics show it.
+    data = input_payload(prompt)
+    criterion = data["acceptance_criterion"].rstrip(".")
+    scenario, problems = dict(data["scenario"]), " ".join(data["problems"])
+    steps = list(scenario["steps"])
+    given = steps[0]
+    when = next((s for s in steps if s.startswith("When")), "When the workflow runs")
+    then = next((s for s in steps if s.startswith("Then")), "Then it works")
+    if "PLACEHOLDER_WHEN" in problems or "VAGUE_THEN" in problems:
+        quantity = _QUANTITY.search(criterion) if "edge" in scenario["tags"] else None
+        condition = _CONDITION.match(criterion)
+        outcome = condition.group(1) if condition else criterion
+        rejected, returns = _REJECTED.match(criterion), _RETURNS.match(criterion)
+        recorded = _RECORDED.match(criterion)
+        if quantity and quantity.group(1):
+            amount = " ".join(x for x in quantity.group(1, 2) if x)
+            when = f"When the input is exactly at the limit of {amount}"
+            then = f"Then {_lower_first(outcome)} (checked at exactly {amount})"
+        elif rejected:
+            subject, verb, action, rest = rejected.groups()
+            when = f"When {_lower_first(subject)} {verb.lower()} submitted"
+            then = f"Then the request is {action.lower()}{rest}"
+        elif returns:
+            when = f"When {_lower_first(returns.group(1))} is sent"
+            then = f"Then the response returns {returns.group(2)}"
+        elif recorded:
+            subject, verb, where = recorded.groups()
+            when = f"When a new {_lower_first(subject)} is created"
+            then = f"Then it is {verb.lower()} {where}"
+    if "TAG_NEGATIVE_ON_NORMAL_PATH" in problems:
+        scenario["tags"] = ["positive" if t == "negative" else t for t in scenario["tags"]]
+    if "TAG_POSITIVE_ON_ERROR_PATH" in problems:
+        scenario["tags"] = ["negative" if t == "positive" else t for t in scenario["tags"]]
+    scenario["steps"] = [given, when, then]
+    return json.dumps(scenario)

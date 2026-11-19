@@ -19,7 +19,7 @@ import yaml
 
 from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent
 from aiq.agents.outreach_assistant import CANARY, Member, OutreachAssistant
-from aiq.agents.test_generator import RequirementsToTestAgent, Story
+from aiq.agents.test_generator import RequirementsToTestAgent, Story, lint_scenario
 from aiq.evals import scorers
 from aiq.evals.judge import CHECKS, JUDGE_VERSION, ScenarioJudge
 from aiq.guards.phi_guard import scan
@@ -57,8 +57,10 @@ def _ratio(num: int, den: int) -> float:
 # --- test generator --------------------------------------------------------------------------
 
 
-def eval_test_generator(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str, Any]:
-    agent = RequirementsToTestAgent(llm)
+def eval_test_generator(
+    llm: LLM, data_dir: Path = DATA / "golden", *, repair: bool = True
+) -> dict[str, Any]:
+    agent = RequirementsToTestAgent(llm, repair=repair)
     stories = _load("test_generator.yaml", data_dir)["stories"]
     n = dict.fromkeys(
         [
@@ -73,6 +75,11 @@ def eval_test_generator(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str,
             "layer_ok",
             "with_negative",
             "risk_gaps",
+            "lint_flagged",
+            "repairs_accepted",
+            "repairs_clean",
+            "lint_left",
+            "model_calls",
         ],
         0,
     )
@@ -90,6 +97,25 @@ def eval_test_generator(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str,
         n["covered"] += sum(c in set(sources) for c in ids)
         n["with_negative"] += any({"negative", "edge"} & set(s.tags) for s in result.scenarios)
         n["risk_gaps"] += sum(i.code == "MISSING_RISK_CASE" for i in result.issues)
+        n["model_calls"] += result.model_calls
+        n["lint_flagged"] += len(result.repairs)
+        n["repairs_accepted"] += sum(r["accepted"] for r in result.repairs)
+        n["repairs_clean"] += sum(r["accepted"] and not r["after"] for r in result.repairs)
+        texts = {c.id: c.text for c in story.acceptance_criteria}
+        n["lint_left"] += sum(
+            bool(lint_scenario(texts[sc.source_criterion_id], sc))
+            for sc in result.scenarios
+            if sc.source_criterion_id in texts
+        )
+        for r in result.repairs:
+            if not (r["accepted"] and not r["after"]):
+                findings.append(
+                    {
+                        "case": f"{story.id}/{r['criterion_id']}",
+                        "type": "repair_incomplete",
+                        "detail": f"still {', '.join(p.split(':')[0] for p in r['after'])}",
+                    }
+                )
         for bad in result.invalid:
             findings.append({"case": story.id, "type": "schema", "detail": bad["error"]})
         for i, j in result.duplicate_pairs:
@@ -150,6 +176,10 @@ def eval_test_generator(llm: LLM, data_dir: Path = DATA / "golden") -> dict[str,
         "layer_accuracy": _ratio(n["layer_ok"], n["matched"]),
         "stories_with_negative_case": _ratio(n["with_negative"], len(stories)),
         "risk_checklist_gaps": n["risk_gaps"],
+        "lint_flagged_rate": _ratio(n["lint_flagged"], n["valid"]),
+        "repair_success_rate": _ratio(n["repairs_clean"], n["lint_flagged"]),
+        "lint_issue_rate": _ratio(n["lint_left"], n["valid"]),
+        "model_calls": n["model_calls"],
     }
     counts = {
         "stories": len(stories),
@@ -299,6 +329,7 @@ def eval_judge(
     generated: list[dict[str, Any]],
     data_dir: Path = DATA / "golden",
     judge_dir: Path = DATA / "judge",
+    baseline: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Calibrate the scenario judge against human labels, then use it to grade every scenario
     the Requirements-to-Test agent produced. The second number only means something while the
@@ -348,20 +379,26 @@ def eval_judge(
     fail = cm["per_class"]["fail"]
 
     stories = {s["id"]: s for s in _load("test_generator.yaml", data_dir)["stories"]}
-    graded = passed = 0
-    check_fails = dict.fromkeys(CHECKS, 0)
-    for case in generated:
-        criteria = {c["id"]: c["text"] for c in stories[case["story"]]["acceptance_criteria"]}
-        for scenario in case["scenarios"]:
-            criterion = criteria.get(scenario["source_criterion_id"])
-            if criterion is None:  # untraced scenarios are already counted by traceability
-                continue
-            result = judge.grade(criterion, scenario)
-            graded += 1
-            passed += result.passed
-            for c, ok in result.checks.items():
-                check_fails[c] += not ok
-            scenario["judge"] = {"verdict": result.verdict, "checks": result.checks}
+
+    def grade_all(cases_to_grade: list[dict[str, Any]]) -> tuple[int, int, dict[str, int]]:
+        graded = passed = 0
+        check_fails = dict.fromkeys(CHECKS, 0)
+        for case in cases_to_grade:
+            criteria = {c["id"]: c["text"] for c in stories[case["story"]]["acceptance_criteria"]}
+            for scenario in case["scenarios"]:
+                criterion = criteria.get(scenario["source_criterion_id"])
+                if criterion is None:  # untraced scenarios are already counted by traceability
+                    continue
+                result = judge.grade(criterion, scenario)
+                graded += 1
+                passed += result.passed
+                for c, ok in result.checks.items():
+                    check_fails[c] += not ok
+                scenario["judge"] = {"verdict": result.verdict, "checks": result.checks}
+        return graded, passed, check_fails
+
+    graded, passed, check_fails = grade_all(generated)
+    base_graded, base_passed, _ = grade_all(baseline) if baseline is not None else (0, 0, {})
 
     metrics = {
         "agreement": _ratio(agree, n),
@@ -372,6 +409,7 @@ def eval_judge(
         "fail_recall": round(fail["recall"], 4),
         "judge_error_count": errors,
         "scenario_pass_rate": _ratio(passed, graded),
+        "scenario_pass_rate_without_repair": _ratio(base_passed, base_graded),
     }
     return {
         "metrics": metrics,
@@ -380,6 +418,8 @@ def eval_judge(
             "human_pass": human.count("pass"),
             "scenarios_graded": graded,
             "scenarios_passed": passed,
+            "scenarios_passed_without_repair": base_passed,
+            "scenarios_graded_without_repair": base_graded,
         },
         "judge": {"version": JUDGE_VERSION, "model": judge_llm.name},
         "per_check_agreement": {c: _ratio(v, n) for c, v in per_check_agree.items()},
@@ -450,12 +490,19 @@ def run_all(
     judge_provider = judge_provider or provider
     golden = data_dir / "golden"
     test_generator = eval_test_generator(GuardedLLM(provider), golden)
+    # The same agent without its review-and-fix step: the judge grades both, so the report
+    # shows what the repair loop is worth (an ablation, like the guardrails-off safety run).
+    without_repair = eval_test_generator(GuardedLLM(provider), golden, repair=False)
     suites = {
         "test_generator": test_generator,
         "triage": eval_triage(GuardedLLM(provider), golden),
         "safety": eval_safety(provider, golden),
         "judge": eval_judge(
-            GuardedLLM(judge_provider), test_generator["cases"], golden, data_dir / "judge"
+            GuardedLLM(judge_provider),
+            test_generator["cases"],
+            golden,
+            data_dir / "judge",
+            baseline=without_repair["cases"],
         ),
     }
     rows, trusted = gate(suites, _load("thresholds.yaml", data_dir))

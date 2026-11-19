@@ -1,10 +1,10 @@
 {
   "run": {
-    "timestamp": "2026-11-19 14:50 UTC",
+    "timestamp": "2026-11-19 15:08 UTC",
     "model": "mock-heuristic-v1",
     "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "722b818",
+    "git_sha": "5ad9f8a",
     "python": "3.13.18"
   },
   "suites": {
@@ -14,27 +14,66 @@
         "criteria_coverage": 0.9815,
         "traceability": 1.0,
         "duplicate_rate": 0.0167,
-        "expected_scenario_recall": 0.8491,
-        "layer_accuracy": 0.9778,
+        "expected_scenario_recall": 0.8679,
+        "layer_accuracy": 0.9783,
         "stories_with_negative_case": 1.0,
-        "risk_checklist_gaps": 16
+        "risk_checklist_gaps": 16,
+        "lint_flagged_rate": 0.85,
+        "repair_success_rate": 0.451,
+        "lint_issue_rate": 0.4667,
+        "model_calls": 65
       },
       "counts": {
         "stories": 14,
         "scenarios": 61,
         "expected": 53,
-        "matched": 45
+        "matched": 46
       },
       "findings": [
+        {
+          "case": "US-01/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-01/AC4",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
         {
           "case": "US-01/AC4",
           "type": "missed_scenario",
           "detail": "no edge scenario covering ['trailing spaces']"
         },
         {
+          "case": "US-02/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-03/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-03/AC3",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
           "case": "US-03/AC2",
           "type": "missed_scenario",
           "detail": "no edge scenario covering ['resubmitted']"
+        },
+        {
+          "case": "US-04/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-04/AC4",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
         },
         {
           "case": "US-04/AC3",
@@ -43,13 +82,48 @@
         },
         {
           "case": "US-05/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-05/AC4",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-05/AC2",
           "type": "missed_scenario",
           "detail": "no edge scenario covering ['8pm']"
         },
         {
-          "case": "US-07/AC2",
-          "type": "missed_scenario",
-          "detail": "no negative scenario covering ['404']"
+          "case": "US-06/AC1",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-06/AC4",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-08/AC1",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-08/AC3",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-08/AC4",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-08/AC5",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
         },
         {
           "case": "US-08",
@@ -57,9 +131,34 @@
           "detail": "AC1 and AC5 produce the same test"
         },
         {
+          "case": "US-09/AC1",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-09/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-09/AC3",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
           "case": "US-09/AC2",
           "type": "missed_scenario",
           "detail": "no edge scenario covering ['3 failed']"
+        },
+        {
+          "case": "US-10/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-10/AC3",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
         },
         {
           "case": "US-10",
@@ -73,13 +172,53 @@
         },
         {
           "case": "US-11/AC1",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-11/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-11/AC1",
           "type": "wrong_layer",
           "detail": "expected API, got ['DB']"
+        },
+        {
+          "case": "US-12/AC3",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-12/AC4",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
         },
         {
           "case": "US-12/AC4",
           "type": "missed_scenario",
           "detail": "no edge scenario covering ['no services found']"
+        },
+        {
+          "case": "US-13/AC1",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-13/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-14/AC2",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
+        },
+        {
+          "case": "US-14/AC3",
+          "type": "repair_incomplete",
+          "detail": "still PLACEHOLDER_WHEN"
         }
       ]
     },
@@ -237,13 +376,16 @@
         "fail_precision": 0.65,
         "fail_recall": 0.8667,
         "judge_error_count": 0,
-        "scenario_pass_rate": 0.15
+        "scenario_pass_rate": 0.4167,
+        "scenario_pass_rate_without_repair": 0.15
       },
       "counts": {
         "calibration_items": 32,
         "human_pass": 17,
         "scenarios_graded": 60,
-        "scenarios_passed": 9
+        "scenarios_passed": 25,
+        "scenarios_passed_without_repair": 9,
+        "scenarios_graded_without_repair": 60
       },
       "judge": {
         "version": "scenario-judge-v1",
@@ -257,9 +399,9 @@
       },
       "scenario_check_fail_rate": {
         "tests_criterion": 0.0,
-        "concrete_action": 0.7,
-        "observable_outcome": 0.3333,
-        "tag_matches": 0.0
+        "concrete_action": 0.4667,
+        "observable_outcome": 0.2833,
+        "tag_matches": 0.0167
       },
       "confusion_matrix": {
         "pass": {
@@ -360,9 +502,27 @@
     {
       "suite": "test_generator",
       "metric": "expected_scenario_recall",
-      "value": 0.8491,
+      "value": 0.8679,
       "bound": {
         "min": 0.75
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_generator",
+      "metric": "lint_issue_rate",
+      "value": 0.4667,
+      "bound": {
+        "max": 0.5
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_generator",
+      "metric": "repair_success_rate",
+      "value": 0.451,
+      "bound": {
+        "min": 0.4
       },
       "passed": true
     },

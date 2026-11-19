@@ -184,7 +184,15 @@ def _judge_section(results: dict[str, Any]) -> list[str]:
         ),
         "",
         f"On the agent's output the judge passed {c['scenarios_passed']} of "
-        f"{c['scenarios_graded']} scenarios.",
+        f"{c['scenarios_graded']} scenarios"
+        + (
+            f", against {c['scenarios_passed_without_repair']} of "
+            f"{c['scenarios_graded_without_repair']} with the agent's review-and-fix step "
+            "switched off. The judge never sees the lint rules the repair step uses, so this "
+            "is an independent measure of what the repair is worth."
+            if c.get("scenarios_graded_without_repair")
+            else "."
+        ),
     ]
 
 
@@ -241,7 +249,11 @@ def render(results: dict[str, Any]) -> str:
         "## 1. Requirements-to-Test agent",
         "",
         f"{c['stories']} user stories produced {c['scenarios']} scenarios; "
-        f"{c['matched']} of {c['expected']} reviewer-expected scenarios were found.",
+        f"{c['matched']} of {c['expected']} reviewer-expected scenarios were found. "
+        f"Lint flagged {_fmt('a', tg['metrics']['lint_flagged_rate'])} of scenarios on the "
+        f"first draft; one repair round fully fixed "
+        f"{_fmt('a', tg['metrics']['repair_success_rate'])} of those, at "
+        f"{tg['metrics']['model_calls']} model calls for {c['stories']} stories.",
         "",
         *_metric_table(results, "test_generator"),
     ]

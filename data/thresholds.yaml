@@ -7,6 +7,10 @@ test_generator:
   traceability: {min: 1.0}
   duplicate_rate: {max: 0.05}
   expected_scenario_recall: {min: 0.75}
+  # Review-and-fix loop: scenarios still failing lint after one repair round, and the share
+  # of flagged scenarios the repair fully fixed. Set from the first baseline; ratchet down/up.
+  lint_issue_rate: {max: 0.50}
+  repair_success_rate: {min: 0.40}
 triage:
   accuracy: {min: 0.80}
   llm_routed_rate: {max: 0.50}

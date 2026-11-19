@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from aiq.agents.test_generator import RequirementsToTestAgent, Scenario, Story
+from aiq.agents.test_generator import RequirementsToTestAgent, Scenario, Story, lint_scenario
 from aiq.llm import MockLLM
 
 GOLDEN = Path(__file__).parents[1] / "data/golden/test_generator.yaml"
@@ -96,3 +96,89 @@ def test_golden_set_is_well_formed():
         for exp in raw["expected"]:
             assert exp["kind"] in {"positive", "negative", "edge"}
             assert all(isinstance(k, str) for k in exp["keywords"]), exp
+
+
+# --- review-and-fix loop ---------------------------------------------------------------------
+
+STOP = "When a member replies STOP, the system sets sms_opt_out to true."
+SHORT_PHONE = "A phone number with fewer than 10 digits is rejected."
+
+
+def _s(steps, tags=("positive",), cid="AC1"):
+    return Scenario.model_validate(
+        _scenario(steps=list(steps), tags=list(tags), source_criterion_id=cid)
+    )
+
+
+def test_lint_flags_placeholder_when_and_vague_then():
+    problems = lint_scenario(
+        SHORT_PHONE,
+        _s(
+            ["Given a member", "When the workflow runs", "Then the limit is applied as specified"],
+            tags=["negative"],
+        ),
+    )
+    assert [p.split(":")[0] for p in problems] == ["PLACEHOLDER_WHEN", "VAGUE_THEN"]
+
+
+def test_lint_flags_wrong_tags_both_ways():
+    good_steps = ["Given a member", "When a member replies STOP", "Then sms_opt_out is true"]
+    assert "TAG_NEGATIVE_ON_NORMAL_PATH" in lint_scenario(STOP, _s(good_steps, ["negative"]))[0]
+    error = "A status update for an unknown referral id returns HTTP 404."
+    steps = ["Given a member", "When an update for id R-0 is sent", "Then HTTP 404 is returned"]
+    assert "TAG_POSITIVE_ON_ERROR_PATH" in lint_scenario(error, _s(steps, ["positive"]))[0]
+
+
+def test_a_clean_scenario_passes_lint():
+    steps = ["Given a member", "When a member replies STOP", "Then sms_opt_out is set to true"]
+    assert lint_scenario(STOP, _s(steps)) == []
+
+
+class _ScriptedLLM:
+    """First call drafts scenarios; later calls answer repairs with a fixed reply."""
+
+    name = "scripted"
+
+    def __init__(self, draft: list[dict], repair_reply: str) -> None:
+        self.draft, self.repair_reply, self.tasks = draft, repair_reply, []
+
+    def complete(self, system, prompt, *, task):
+        self.tasks.append(task)
+        if task == "test_generation":
+            return json.dumps({"scenarios": self.draft})
+        return self.repair_reply
+
+
+PLACEHOLDER = _scenario(
+    steps=["Given a member", "When the workflow runs", "Then sms_opt_out is set to true"]
+)
+
+
+def test_repair_is_kept_when_it_removes_problems():
+    fixed = _scenario(
+        steps=["Given a member", "When a member replies STOP", "Then sms_opt_out is set to true"]
+    )
+    llm = _ScriptedLLM([PLACEHOLDER], json.dumps(fixed))
+    result = RequirementsToTestAgent(llm).run(STORY)
+    assert llm.tasks == ["test_generation", "test_repair"] and result.model_calls == 2
+    assert result.scenarios[0].steps[1] == "When a member replies STOP"
+    assert result.repairs[0]["accepted"] and result.repairs[0]["after"] == []
+
+
+def test_repair_that_changes_the_criterion_or_breaks_the_schema_is_rejected():
+    moved = _scenario(
+        source_criterion_id="AC2",
+        steps=["Given a member", "When a member replies STOP", "Then x is set"],
+    )
+    for reply in (json.dumps(moved), "not json", json.dumps({**PLACEHOLDER, "test_layer": "E2E"})):
+        result = RequirementsToTestAgent(_ScriptedLLM([PLACEHOLDER], reply)).run(STORY)
+        assert result.scenarios[0].steps[1] == "When the workflow runs"
+        assert result.repairs[0]["accepted"] is False
+        assert any(i.code == "PLACEHOLDER_WHEN" for i in result.issues)
+
+
+def test_repair_off_makes_one_call_and_still_reports_lint():
+    llm = _ScriptedLLM([PLACEHOLDER], "unused")
+    result = RequirementsToTestAgent(llm, repair=False).run(STORY)
+    assert llm.tasks == ["test_generation"] and result.repairs == []
+    assert any(i.code == "PLACEHOLDER_WHEN" for i in result.issues)
