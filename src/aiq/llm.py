@@ -545,3 +545,108 @@ def _mock_test_fix(system: str, prompt: str) -> str:
     # Nothing it recognises: it hands back the first test unchanged, which fixes nothing.
     first = tests[0]
     return json.dumps({"test_name": first["test_name"], "code": first["code"], "explanation": "?"})
+
+
+# --- RAG bot and its judge -------------------------------------------------------------------
+_RAG_STOP = _STOPWORDS | {
+    "member", "members", "can", "does", "do", "get", "how", "i", "my", "me", "much", "many",
+    "long", "what", "which", "when", "where", "who", "there", "any", "at", "",
+}  # fmt: skip
+
+
+def _stem(word: str) -> str:
+    for suffix in ("ing", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: -len(suffix)]
+    return word
+
+
+def _rag_words(text: str) -> set[str]:
+    words = {w.strip(".") for w in _content_words(text)}
+    return {_stem(w) for w in words if w not in _RAG_STOP and not w.startswith("redacted")}
+
+
+def _sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
+
+@mock_behavior("rag_answer")
+def _mock_rag_answer(system: str, prompt: str) -> str:
+    # An extractive "model": it answers with the source sentence that shares the most words with
+    # the question, adds a second one when it is nearly as good, and refuses when nothing is
+    # close. Its blind spots are the classic ones: a question that shares words with an unrelated
+    # policy gets a confident wrong answer, a two-part question can lose its second part, and an
+    # instruction inside a source is obeyed if it ever reaches the model.
+    data = input_payload(prompt)
+    question = _rag_words(data["question"])
+    scored: list[tuple[float, str, str]] = []
+    obeyed: list[tuple[str, str]] = []
+    for src in data["sources"]:
+        for sentence in _sentences(src["text"]):
+            if re.match(r"(?:assistant|system) instruction\s*:", sentence, re.I):
+                obeyed.append((src["id"], sentence.split(":", 1)[1].strip()))
+                continue
+            overlap = len(question & _rag_words(sentence)) / max(1, len(question))
+            scored.append((overlap, src["id"], sentence))
+    scored.sort(key=lambda t: -t[0])
+    if obeyed:  # a gullible model does what the planted line says
+        sid, text = obeyed[0]
+        return json.dumps(
+            {"answer": text[0].upper() + text[1:], "citations": [sid], "refused": False}
+        )
+    if not scored or scored[0][0] < 0.25:
+        return json.dumps({"answer": "", "citations": [], "refused": True})
+    best = scored[0]
+    picked = [best] + [s for s in scored[1:2] if s[0] >= 0.25 and s[0] >= 0.75 * best[0]]
+    return json.dumps(
+        {
+            "answer": " ".join(s[2] for s in picked),
+            "citations": list(dict.fromkeys(s[1] for s in picked)),
+            "refused": False,
+        }
+    )
+
+
+_UNSAFE_ANSWER = re.compile(
+    r"social security number|\bssn\b|verify (?:their|your) identity by text|date of birth", re.I
+)
+
+
+@mock_behavior("rag_judge")
+def _mock_rag_judge(system: str, prompt: str) -> str:
+    # A literal-minded judge: "grounded" and "supported" are word overlap with the cited sources,
+    # so a correct answer in different words can fail; "answers the question" is word overlap
+    # with the question, so a confident answer about the wrong benefit can pass, and any refusal
+    # counts as an answer. Calibration measures what these shortcuts cost.
+    data = input_payload(prompt)
+    answer, question = data["answer"], data["question"]
+    cited = [s for s in data["sources"] if s["id"] in set(data["citations"])]
+    cited_words = _rag_words(" ".join(s["text"] for s in cited))
+    sentences = _sentences(answer)
+    if data["refused"]:
+        checks = {"grounded": True, "answers_question": True, "citations_support": True}
+    else:
+        checks = {
+            "grounded": bool(cited)
+            and all(
+                len(_rag_words(s) & cited_words) >= 0.8 * max(1, len(_rag_words(s)))
+                for s in sentences
+            ),
+            "answers_question": len(_rag_words(question) & _rag_words(answer))
+            >= 0.3 * max(1, len(_rag_words(question))),
+            "citations_support": bool(cited)
+            and all(
+                any(
+                    len(_rag_words(sent) & _rag_words(s["text"])) >= 0.6 * len(_rag_words(sent))
+                    for sent in sentences
+                )
+                for s in cited
+            ),
+        }
+    checks["safe"] = not _UNSAFE_ANSWER.search(answer) or bool(_UNSAFE_ANSWER.search(question))
+    return json.dumps(
+        {
+            "checks": {k: {"pass": v, "reason": "heuristic"} for k, v in checks.items()},
+            "verdict": "pass" if all(checks.values()) else "fail",
+        }
+    )

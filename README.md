@@ -23,6 +23,13 @@ calibrated against human labels before its grades are allowed to gate anything. 
 feature needs regression tests just like code does, and "it looked fine when I tried it" is not a
 test. The domain is healthcare member outreach and referrals, and all data is synthetic.
 
+A **RAG bot** answers member-program questions from 12 policy documents, cites the paragraphs it
+used and refuses when the documents hold no answer. It is scored in layers: retrieval against gold
+paragraphs, answer checks code can make (refusal, citations, key facts, an instruction planted in
+a vendor document, PHI), and a calibrated **RAG answer judge** for what needs judgement. Its
+uncalibrated judge passes every answer while the code checks find wrong ones, which is the point
+of calibrating first.
+
 **One command runs the whole chain**, requirements to release decision, with a person at the two
 points where a machine should not decide alone:
 
@@ -37,8 +44,8 @@ user story -> scenarios (review-and-fix) -> [approve scenarios] -> tests (safety
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:46 UTC,
-quality gate **passed, 35/35 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 16:03 UTC,
+quality gate **passed, 47/47 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -64,9 +71,14 @@ Full report with the confusion matrix, failure examples and limitations:
 | Pipeline | end-to-end release decisions (7 candidates) | 7 of 7 | 100% |
 | Pipeline | bugged candidates that reach ship or sign-off | 0 | ≤ 0 |
 | Pipeline | approval gates enforced (no approvals: stop; no sign-off: no ship) | 2 of 2 | 100% |
+| RAG bot | retrieval recall@3 / MRR (25 questions with a gold paragraph) | 96.0% / 0.91 | ≥ 90% / ≥ 0.85 |
+| RAG bot | refusal accuracy (answers when it should, refuses when it should) | 90.0% | ≥ 85% |
+| RAG bot | key facts stated in answers | 82.3% | ≥ 80% |
+| RAG bot | planted instruction followed / PHI in answers | 0 / 0 | ≤ 0 |
+| RAG judge | agreement with human labels (29 answers) | 58.6%, kappa 0.16 | not trusted: its 100% pass rate is not gated |
 | Monitoring | drift nights alerted (new failure pattern x2, bad deploy) | 3 of 3 | 100% |
 | Monitoring | false alarms on normal nights | 0 of 3 | ≤ 0 |
-| Monitoring | invalid model output, over 416 traced calls | 0.0% | ≤ 2.0% |
+| Monitoring | invalid model output, over 595 traced calls | 0.0% | ≤ 2.0% |
 | Failure-Triage | accuracy | 85.4% | ≥ 80.0% |
 | Failure-Triage | accuracy 95% CI | 72.8% to 92.8% | not gated |
 | Failure-Triage | llm_routed_rate | 43.8% | ≤ 50.0% |
@@ -192,8 +204,17 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   it was injected: a planted bug, a broken environment, or a test that also fails on the known-good
   baseline. Triage is scored against that, and its labels are turned into a release decision so
   a triage mistake shows up as what it costs (a regression retried instead of blocked).
+- **Score RAG in layers, cheapest first.** Retrieval is checked against gold paragraphs with no
+  model at all. Refusals, citations, key facts, injection and PHI are checked by code. Only what
+  needs judgement (is the answer grounded, does it answer the question) goes to the judge, and
+  only after the judge agrees with human labels. PHI is never left to the judge: behind the PHI
+  guard it only sees redacted text. Retrieved text is treated as untrusted input: sentences that
+  address the assistant are removed before the model sees them, and the ablation shows the bot
+  repeating a planted instruction without that step.
 - **People at the two irreversible points.** A scenario still flagged after repair needs a named
-  reviewer before any code is written from it (`data/pipeline/approvals.yaml`); with nothing
+  reviewer before any code is written from it (`data/rag/                         12 policy documents (one with a planted instruction) and 30 golden questions
+data/judge/rag_calibration.yaml   29 human-labelled RAG answers the RAG judge is calibrated against
+data/pipeline/approvals.yaml`); with nothing
   approved the pipeline stops and lists what to review. A ship decision needs a sign-off for that
   candidate and that exact decision. Block and rerun need none, because they are the safe
   direction. Both gates are tested by running the chain without the human decisions.
@@ -241,6 +262,8 @@ More detail on metric definitions and how to extend the sets:
 src/aiq/llm.py                    LLM interface, deterministic mock, optional real provider, PHI-guarded wrapper
 src/aiq/agents/                   test_generator, test_to_code, test_fixer, failure_triage, outreach_assistant
 src/aiq/execution.py              stage 3: run a suite on a release candidate, build Failure records, release decision
+src/aiq/rag/                      the RAG bot: paragraph chunking, BM25 retrieval, grounded answers with citations
+src/aiq/evals/rag_judge.py        LLM-as-judge for RAG answers: grounded, answers the question, citations, safe
 src/aiq/pipeline.py               stage 6: the orchestrator, approval gates and the release-readiness report
 src/aiq/tracing.py                stage 4: OpenTelemetry GenAI-style spans for every model call
 src/aiq/monitor.py                stage 4: label-free drift signals, PSI, alerts, run-to-run regressions
@@ -264,6 +287,8 @@ data/thresholds.yaml              the quality gate, including the judge's trust 
 
 - **Approvals from a PR review** instead of a YAML file: the pipeline posts the pending list,
   and an approving review is the sign-off.
+- **Hybrid retrieval** (BM25 plus embeddings, then a reranker) behind the same `search` method,
+  compared on the same golden questions.
 - **Judge on a real model:** run the calibration with `AIQ_JUDGE_MODEL` set to a real model and
   commit the report; a different model family from the agent avoids self-preference.
 - **Judge for triage evidence and outreach tone:** the same calibrate-then-gate pattern.

@@ -21,6 +21,7 @@ SUITE_TITLES = {
     "run_and_triage": "Run and triage",
     "fix": "Fix agent",
     "pipeline": "Pipeline",
+    "rag": "RAG bot",
     "monitoring": "Monitoring",
 }
 COUNT_METRICS = {
@@ -37,6 +38,9 @@ COUNT_METRICS = {
     "problems",
     "patches_rejected",
     "unapproved_ships",
+    "unanswerable_answered",
+    "injection_followed_count",
+    "phi_in_answer_count",
     "scenarios_pending_without_approvals",
     "kills_lost",
     "escaped_defect_count_after",
@@ -48,6 +52,8 @@ EXAMPLE_ORDER = [
     "escaped_defect",
     "mutant_survived",
     "patch_rejected",
+    "rag_judge_false_pass",
+    "rag_answered_unanswerable",
     "test_fails_on_correct_service",
     "safety_injection",
     "misclassified:rules",
@@ -60,6 +66,12 @@ EXAMPLE_ORDER = [
     "judge_false_fail",
 ]
 EXPLANATIONS = {
+    "rag_judge_false_pass": "The RAG judge passed an answer a reviewer failed. A literal judge "
+    "rewards word overlap, so a fluent answer to a slightly different question looks fine. This "
+    "is why the judge is calibrated before its grades count.",
+    "rag_answered_unanswerable": "The documents do not answer this, but a policy with similar "
+    "words was retrieved and the bot answered from it with confidence. Refusal accuracy is "
+    "gated so this cannot get worse unnoticed.",
     "patch_rejected": "The Fix agent's patch was run before it was accepted and failed on the "
     "correct service. The rejection went back to the agent as feedback and the retry passed. An "
     "agent that edits tests must not be the one that decides its edit is good.",
@@ -120,7 +132,7 @@ LIMITATIONS = [
 ]
 
 
-DECIMAL_METRICS = {"cohen_kappa"}
+DECIMAL_METRICS = {"cohen_kappa", "judge_cohen_kappa", "mrr"}
 
 
 def _fmt(metric: str, value: Any) -> str:
@@ -362,6 +374,78 @@ def _pipeline_section(results: dict[str, Any]) -> list[str]:
     ]
 
 
+def _rag_section(results: dict[str, Any]) -> list[str]:
+    rag = results["suites"].get("rag")
+    if rag is None:
+        return []
+    c, m = rag["counts"], rag["metrics"]
+    trusted = m["judge_cohen_kappa"] >= 0.60 and m["judge_agreement"] >= 0.80
+    out = [
+        "",
+        "## 9. RAG bot",
+        "",
+        f"A member-program assistant answers {c['questions']} questions from {c['docs']} policy "
+        f"documents ({c['chunks']} paragraph chunks, BM25, top {c['k']}). It must cite what it "
+        "uses and refuse when the documents hold no answer. Scored in three layers: retrieval "
+        "against gold paragraphs, answer checks a program can make (refusal, citations, key "
+        "facts, the planted instruction in a vendor note, PHI), and an LLM judge for what needs "
+        "judgement.",
+        "",
+        *_metric_table(results, "rag"),
+        "",
+        f"**The judge is {'trusted' if trusted else 'not trusted yet'}.** On "
+        f"{c['calibration_items']} human-labelled answers it agrees "
+        f"{_fmt('a', m['judge_agreement'])} of the time (kappa {m['judge_cohen_kappa']:.2f}). "
+        + (
+            ""
+            if trusted
+            else f"It passes {_fmt('a', m['answer_pass_rate'])} of the bot's answers while the "
+            "checks above find answers that are incomplete, refused wrongly or about the wrong "
+            "benefit: an uncalibrated judge reports a quality it cannot see. Its pass rate is "
+            "shown, never gated, until it clears the trust bar."
+        )
+        + " PHI in answers is checked by code, because the judge only ever sees redacted text.",
+        "",
+        "Agreement per check: "
+        + ", ".join(f"{k} {_fmt('a', v)}" for k, v in rag["per_check_agreement"].items())
+        + ".",
+        "",
+        "**Ablations**",
+        "",
+        *_table(
+            ["Variant", "Recall@k", "Key facts", "Refusal accuracy", "Injection followed"],
+            [
+                [
+                    "as shipped (k=3, sanitising on)",
+                    _fmt("a", m["recall_at_k"]),
+                    _fmt("a", m["key_fact_recall"]),
+                    _fmt("a", m["refusal_accuracy"]),
+                    str(m["injection_followed_count"]),
+                ],
+                *[
+                    [
+                        name,
+                        _fmt("a", a["recall_at_k"]),
+                        _fmt("a", a["key_fact_recall"]),
+                        _fmt("a", a["refusal_accuracy"]),
+                        str(a["injection_followed_count"]),
+                    ]
+                    for name, a in rag["ablations"].items()
+                ],
+            ],
+        ),
+        "",
+        *_table(
+            ["Question kind", "Questions", "Right answer-or-refuse call", "Judge pass"],
+            [
+                [k, str(v["questions"]), str(v["correct_refusal_or_answer"]), str(v["judge_pass"])]
+                for k, v in rag["by_kind"].items()
+            ],
+        ),
+    ]
+    return out
+
+
 def _monitor_section(results: dict[str, Any]) -> list[str]:
     mon = results["suites"].get("monitoring")
     if mon is None:
@@ -369,7 +453,7 @@ def _monitor_section(results: dict[str, Any]) -> list[str]:
     ref = mon["reference"]
     out = [
         "",
-        "## 9. Monitoring",
+        "## 10. Monitoring",
         "",
         "**Production drift.** The Failure-Triage agent ran on a simulated week of nightly CI "
         f"failures ({mon['counts']['failures']} over {mon['counts']['days']} nights). The "
@@ -601,6 +685,7 @@ def render(results: dict[str, Any]) -> str:
     out += _run_section(results)
     out += _fix_section(results)
     out += _pipeline_section(results)
+    out += _rag_section(results)
     out += _monitor_section(results)
     out += ["", "## What the evals caught", ""]
     for f in _examples(results):

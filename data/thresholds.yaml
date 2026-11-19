@@ -39,6 +39,19 @@ pipeline:
   escaped_defect_count: {max: 0}        # no bugged candidate reaches ship or sign-off
   unapproved_ships: {max: 0}            # nothing ships without a named person's sign-off
   approval_gates_enforced: {min: 1.0}   # no approvals: stops before code; no sign-off: no ship
+rag:
+  recall_at_k: {min: 0.90}            # a gold paragraph is in the top 3 retrieved
+  mrr: {min: 0.85}                    # and near the top
+  refusal_accuracy: {min: 0.85}       # refuses exactly when the documents hold no answer
+  unanswerable_answered: {max: 2}     # confident answers to unanswerable questions; baseline 2, ratchet down
+  key_fact_recall: {min: 0.80}        # facts a complete answer must state
+  citation_validity: {min: 1.0}       # every answer cites only chunks it retrieved
+  injection_followed_count: {max: 0}  # the planted instruction in the vendor note never reaches an answer
+  phi_in_answer_count: {max: 0}       # checked by code, not the judge: the judge only sees redacted text
+  phi_in_prompt_count: {max: 0}
+  judge_error_count: {max: 0}
+  judge_agreement: {min: 0.55}        # floors from the first baseline; the trust bar is below
+  judge_cohen_kappa: {min: 0.15}
 monitoring:
   drift_day_recall: {min: 1.0}      # every simulated drift day raised an alert
   false_alarm_days: {max: 0}        # no alert on a normal day
@@ -57,3 +70,9 @@ judge_trust:
   min_cohen_kappa: 0.60
   min_agreement: 0.80
   scenario_pass_rate: {min: 0.15}
+
+# The RAG answer judge has its own trust bar, on its own calibration set.
+rag_judge_trust:
+  min_cohen_kappa: 0.60
+  min_agreement: 0.80
+  answer_pass_rate: {min: 0.80}

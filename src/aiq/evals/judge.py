@@ -83,13 +83,18 @@ class ScenarioJudge:
 
     @staticmethod
     def parse(raw: str) -> JudgeResult:
-        try:
-            payload = extract_json(raw)
-            checks = {name: bool(payload["checks"][name]["pass"]) for name in CHECKS}
-            reasons = {name: str(payload["checks"][name].get("reason", "")) for name in CHECKS}
-        except (ValueError, KeyError, TypeError) as exc:
-            return JudgeResult("error", error=f"{type(exc).__name__}: {exc}")
-        # The verdict is derived from the checks, never taken from the model: a judge that
-        # says "pass" while failing a check is caught here instead of trusted.
-        verdict = "pass" if all(checks.values()) else "fail"
-        return JudgeResult(verdict, checks, reasons)
+        return parse_checks(raw, CHECKS)
+
+
+def parse_checks(raw: str, checks_spec: dict[str, str]) -> JudgeResult:
+    """Read a judge's JSON answer for the given checks. Unparseable output is an error."""
+    try:
+        payload = extract_json(raw)
+        checks = {name: bool(payload["checks"][name]["pass"]) for name in checks_spec}
+        reasons = {name: str(payload["checks"][name].get("reason", "")) for name in checks_spec}
+    except (ValueError, KeyError, TypeError) as exc:
+        return JudgeResult("error", error=f"{type(exc).__name__}: {exc}")
+    # The verdict is derived from the checks, never taken from the model: a judge that
+    # says "pass" while failing a check is caught here instead of trusted.
+    verdict = "pass" if all(checks.values()) else "fail"
+    return JudgeResult(verdict, checks, reasons)
