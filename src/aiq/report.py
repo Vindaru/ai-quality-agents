@@ -16,6 +16,7 @@ SUITE_TITLES = {
     "test_generator": "Requirements-to-Test",
     "triage": "Failure-Triage",
     "safety": "Outreach safety",
+    "judge": "Scenario judge",
 }
 COUNT_METRICS = {
     "phi_leak_count",
@@ -23,6 +24,7 @@ COUNT_METRICS = {
     "risk_checklist_gaps",
     "false_refusals",
     "model_calls",
+    "judge_error_count",
 }
 
 # Which findings make the best examples, and what each one means.
@@ -35,6 +37,8 @@ EXAMPLE_ORDER = [
     "missed_scenario",
     "near_duplicate",
     "wrong_layer",
+    "judge_false_pass",
+    "judge_false_fail",
 ]
 EXPLANATIONS = {
     "caught_by_output_guard": "The input filter missed a reworded injection and the model "
@@ -53,6 +57,12 @@ EXPLANATIONS = {
     "This is the most common gap and the main reason recall is below 100%.",
     "near_duplicate": "Two acceptance criteria say the same thing, so the agent wrote the same "
     "test twice. Flagging it lets the story be fixed before tests are written.",
+    "judge_false_pass": "The judge passed a scenario a human failed. This is the costly "
+    "direction: a weak test reaches the test plan with a green tick. It is why the judge is "
+    "calibrated before it is allowed to gate anything.",
+    "judge_false_fail": "The judge failed a scenario a human passed, usually a correct test "
+    "written in different words. Annoying rather than dangerous, but it erodes trust in the "
+    "judge and makes people ignore it.",
     "wrong_layer": "The scenario is right but sits on a different test layer than a reviewer "
     "would choose, which matters for test pyramid cost.",
 }
@@ -63,7 +73,10 @@ LIMITATIONS = [
     "repeatable. Its mistakes are real outputs of that mock, but a real model will make "
     "different ones. Set `AIQ_LLM_PROVIDER=anthropic` to measure a real model.",
     "**Keyword matching for expected scenarios.** A correct scenario worded differently counts "
-    "as a miss. An LLM-as-judge, calibrated against human labels, is the planned upgrade.",
+    "as a miss. The scenario judge grades meaning instead, but only becomes a gate once its "
+    "agreement with human labels clears the trust bar.",
+    "**Judge calibration set** ({calibration} items) is small and its labels come from one "
+    "reviewer. Kappa on 32 items moves a lot with a single relabel; read its interval.",
     "**Regex PHI detection** over-redacts (for example ISO dates in logs) and cannot see "
     "free-text PHI such as diagnoses or names. It is a backstop, not a de-identification service.",
     "**Injection detection is pattern based** and covers English and Spanish only.",
@@ -72,7 +85,12 @@ LIMITATIONS = [
 ]
 
 
+DECIMAL_METRICS = {"cohen_kappa"}
+
+
 def _fmt(metric: str, value: Any) -> str:
+    if metric in DECIMAL_METRICS:
+        return f"{value:.2f}"
     if metric in COUNT_METRICS or isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     return f"{value * 100:.1f}%"
@@ -123,6 +141,53 @@ def _examples(results: dict[str, Any]) -> list[dict[str, Any]]:
     return chosen[:5]
 
 
+def _judge_section(results: dict[str, Any]) -> list[str]:
+    jd = results["suites"]["judge"]
+    m, c = jd["metrics"], jd["counts"]
+    trusted = results.get("judge_trusted", False)
+    status = (
+        "**Trusted**: its grades are part of the gate."
+        if trusted
+        else "**Not trusted yet**: agreement with the human labels is below the trust bar in "
+        "`data/thresholds.yaml`, so `scenario_pass_rate` is reported but does not gate."
+    )
+    return [
+        "## 4. LLM-as-judge for scenario quality",
+        "",
+        f"The judge grades each generated scenario on four yes/no checks "
+        f"({', '.join(f'`{k}`' for k in jd['per_check_agreement'])}). Before its grades count, "
+        f"it grades {c['calibration_items']} human-labeled scenarios ({c['human_pass']} pass, "
+        f"{c['calibration_items'] - c['human_pass']} fail). Agreement "
+        f"{_fmt('a', m['agreement'])} (95% CI {_fmt('a', m['agreement_ci95_low'])} to "
+        f"{_fmt('a', m['agreement_ci95_high'])}), Cohen's kappa {m['cohen_kappa']:.2f}. {status}",
+        "",
+        *_metric_table(results, "judge"),
+        "",
+        "**Judge vs human** (rows = human label, columns = judge)",
+        "",
+        *_table(
+            ["human \\ judge", "pass", "fail"],
+            [
+                [h, *(str(jd["confusion_matrix"][h][j]) for j in ("pass", "fail"))]
+                for h in ("pass", "fail")
+            ],
+        ),
+        "",
+        "**Where the judge and the human disagree, by check**",
+        "",
+        *_table(
+            ["Check", "Agreement with human", "Fail rate on generated scenarios"],
+            [
+                [k, _fmt("a", v), _fmt("a", jd["scenario_check_fail_rate"][k])]
+                for k, v in jd["per_check_agreement"].items()
+            ],
+        ),
+        "",
+        f"On the agent's output the judge passed {c['scenarios_passed']} of "
+        f"{c['scenarios_graded']} scenarios.",
+    ]
+
+
 def render(results: dict[str, Any]) -> str:
     run = results["run"]
     passed = sum(r["passed"] for r in results["gate"])
@@ -137,6 +202,11 @@ def render(results: dict[str, Any]) -> str:
             [
                 ["Date", run["timestamp"]],
                 ["Model", model],
+                [
+                    "Judge",
+                    f"`{results['suites']['judge']['judge']['version']}` on "
+                    f"`{run.get('judge_model', run['model'])}`",
+                ],
                 ["Commit", f"`{run['git_sha']}`"],
                 ["Python", run["python"]],
                 [
@@ -237,9 +307,9 @@ def render(results: dict[str, Any]) -> str:
         + (", ".join(f"{k} {v}" for k, v in sorted(sf["redactions"].items())) or "none")
         + ".",
         "",
-        "## What the evals caught",
-        "",
     ]
+    out += _judge_section(results)
+    out += ["", "## What the evals caught", ""]
     for f in _examples(results):
         out += [f"- **{f['case']}** ({f['type']}): {f['detail']}  ", f"  {EXPLANATIONS[_kind(f)]}"]
 
@@ -247,6 +317,7 @@ def render(results: dict[str, Any]) -> str:
         "stories": tg["counts"]["stories"],
         "failures": tr["counts"]["failures"],
         "cases": sf["counts"]["cases"],
+        "calibration": results["suites"]["judge"]["counts"]["calibration_items"],
     }
     all_findings = [
         [SUITE_TITLES[name], f["case"], f["type"], f["detail"].replace("|", "\\|")]

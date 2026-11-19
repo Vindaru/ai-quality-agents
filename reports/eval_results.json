@@ -1,10 +1,11 @@
 {
   "run": {
-    "timestamp": "2026-10-16 21:20 UTC",
+    "timestamp": "2026-11-19 14:50 UTC",
     "model": "mock-heuristic-v1",
+    "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "d3540bc",
-    "python": "3.11.17"
+    "git_sha": "722b818",
+    "python": "3.13.18"
   },
   "suites": {
     "test_generator": {
@@ -226,6 +227,97 @@
           "detail": "input checks missed it; output guard blocked it (['output:confidential_text_blocked'])"
         }
       ]
+    },
+    "judge": {
+      "metrics": {
+        "agreement": 0.7188,
+        "agreement_ci95_low": 0.5463,
+        "agreement_ci95_high": 0.8444,
+        "cohen_kappa": 0.4462,
+        "fail_precision": 0.65,
+        "fail_recall": 0.8667,
+        "judge_error_count": 0,
+        "scenario_pass_rate": 0.15
+      },
+      "counts": {
+        "calibration_items": 32,
+        "human_pass": 17,
+        "scenarios_graded": 60,
+        "scenarios_passed": 9
+      },
+      "judge": {
+        "version": "scenario-judge-v1",
+        "model": "mock-heuristic-v1"
+      },
+      "per_check_agreement": {
+        "tests_criterion": 0.8125,
+        "concrete_action": 0.9688,
+        "observable_outcome": 0.75,
+        "tag_matches": 0.7812
+      },
+      "scenario_check_fail_rate": {
+        "tests_criterion": 0.0,
+        "concrete_action": 0.7,
+        "observable_outcome": 0.3333,
+        "tag_matches": 0.0
+      },
+      "confusion_matrix": {
+        "pass": {
+          "pass": 10,
+          "fail": 7
+        },
+        "fail": {
+          "pass": 2,
+          "fail": 13
+        }
+      },
+      "findings": [
+        {
+          "case": "J08",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: observable_outcome (A missing template is a fallback (error) path, so negative is a fair tag.)"
+        },
+        {
+          "case": "J01",
+          "type": "judge_false_pass",
+          "detail": "human fail, judge pass; checks disagreed: tag_matches (Opting out is the normal path. The agent read the word STOP as a negative case.)"
+        },
+        {
+          "case": "J13",
+          "type": "judge_false_pass",
+          "detail": "human fail, judge pass; checks disagreed: tag_matches (An unanswered call is an expected path, not invalid input; 'not' made the agent tag it negative.)"
+        },
+        {
+          "case": "J16",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: tests_criterion, tag_matches (9 digits sits just under the 10-digit limit, so edge is right.)"
+        },
+        {
+          "case": "J17",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: tests_criterion, tag_matches"
+        },
+        {
+          "case": "J18",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: observable_outcome, tag_matches"
+        },
+        {
+          "case": "J19",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: tests_criterion"
+        },
+        {
+          "case": "J21",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: tests_criterion, observable_outcome (Correct test in different words. A keyword-matching judge tends to miss this one.)"
+        },
+        {
+          "case": "J28",
+          "type": "judge_false_fail",
+          "detail": "human pass, judge fail; checks disagreed: tests_criterion, observable_outcome"
+        }
+      ]
     }
   },
   "gate": [
@@ -327,7 +419,35 @@
         "min": 0.9
       },
       "passed": true
+    },
+    {
+      "suite": "judge",
+      "metric": "judge_error_count",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "judge",
+      "metric": "agreement",
+      "value": 0.7188,
+      "bound": {
+        "min": 0.65
+      },
+      "passed": true
+    },
+    {
+      "suite": "judge",
+      "metric": "cohen_kappa",
+      "value": 0.4462,
+      "bound": {
+        "min": 0.4
+      },
+      "passed": true
     }
   ],
+  "judge_trusted": false,
   "passed": true
 }

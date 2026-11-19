@@ -134,6 +134,15 @@ def get_llm() -> GuardedLLM:
     return GuardedLLM(get_provider())
 
 
+def get_judge_provider() -> LLM:
+    """The model that grades the agents. Set ``AIQ_JUDGE_MODEL`` to judge with a different
+    (ideally stronger, or at least different) model than the one being judged."""
+    provider = os.getenv("AIQ_LLM_PROVIDER", "mock").strip().lower()
+    if provider == "anthropic":
+        return AnthropicLLM(os.getenv("AIQ_JUDGE_MODEL", DEFAULT_MODEL))
+    return get_provider()
+
+
 # --- mock behaviors -------------------------------------------------------------------------
 # Each behavior is a small heuristic standing in for a model. They are intentionally
 # imperfect in the ways real models are (missed edge cases, wrong labels, an invented
@@ -248,3 +257,76 @@ def _mock_outreach_reply(system: str, prompt: str) -> str:
             f'{thanks} {member["first_name"]}, we received: "{text}". A coordinator will follow up.'
         )
     return json.dumps({"action": "reply", "message": message})
+
+
+# Words that make a Then step checkable, and When steps that are only placeholders.
+_OBSERVABLE = re.compile(
+    r"\b(?:\d+|true|false|status|stored|recorded|persisted|saved|logged|sent|rejected|returned"
+    r"|displays?|shown|set to|created|blocked|falls? back|normalized)\b|[A-Z]{3,}|\"",
+)
+_PLACEHOLDER_WHEN = re.compile(
+    r"^When (?:the workflow runs|it runs|the system processes it)\b", re.I
+)
+_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "to",
+    "of",
+    "for",
+    "and",
+    "or",
+    "in",
+    "on",
+    "with",
+    "that",
+    "be",
+    "by",
+    "as",
+    "it",
+    "its",
+    "this",
+    "when",
+    "then",
+    "given",
+    "member",
+    "members",
+    "system",
+}
+
+
+def _content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9_.]+", text.casefold()) if w not in _STOPWORDS}
+
+
+@mock_behavior("scenario_judge")
+def _mock_scenario_judge(system: str, prompt: str) -> str:
+    # A cheap, literal-minded judge. Its blind spots are realistic ones: it rewards word
+    # overlap rather than meaning (so a correct but reworded scenario can fail), and it trusts
+    # a "positive" tag without checking it. Calibration against human labels measures exactly
+    # how much those blind spots cost.
+    data = input_payload(prompt)
+    criterion, sc = data["acceptance_criterion"], data["scenario"]
+    steps = sc.get("steps") or []
+    whens = [s for s in steps if s.startswith("When")]
+    thens = [s for s in steps if s.startswith(("Then", "And"))]
+    crit_words = _content_words(criterion)
+    overlap = len(crit_words & _content_words(" ".join([sc.get("scenario", ""), *steps])))
+    tags = set(sc.get("tags") or [])
+    checks = {
+        "tests_criterion": bool(crit_words) and overlap / len(crit_words) >= 0.4,
+        "concrete_action": bool(whens) and not any(_PLACEHOLDER_WHEN.search(w) for w in whens),
+        "observable_outcome": bool(thens)
+        and any(_OBSERVABLE.search(t) for t in thens)
+        and not any(re.search(r"as specified|works correctly|it works", t, re.I) for t in thens),
+        "tag_matches": ("negative" not in tags or bool(_NEGATIVE_HINT.search(criterion)))
+        and ("edge" not in tags or bool(_EDGE_HINT.search(criterion))),
+    }
+    return json.dumps(
+        {
+            "checks": {k: {"pass": v, "reason": "heuristic"} for k, v in checks.items()},
+            "verdict": "pass" if all(checks.values()) else "fail",
+        }
+    )
