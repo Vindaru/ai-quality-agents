@@ -45,6 +45,20 @@ Only tests that pass on the correct service take part in the kill score; otherwi
 always fails would kill every mutant. A unit test proves every mutant really changes behaviour,
 so no mutant is unkillable. A surviving mutant names the behaviour no generated test checks.
 
+### Run and triage
+
+| Metric | Definition |
+|---|---|
+| triage_accuracy | pipeline failures whose triage category matches the injected cause / failures |
+| decision_accuracy | release runs whose decision (from the triaged categories) matches the decision the true causes call for / runs |
+| escaped_defect_count | runs with a planted bug that end in a ship decision because no test failed |
+
+Ground truth comes from what was injected: an environment fault that broke the test is that
+fault's category; an assertion that also fails on the known-good baseline is an automation issue;
+an assertion that fails only on the candidate is a product bug; a crash in the test's own code is
+an automation issue. Decisions: any product bug blocks; an environment or test-data failure means
+rerun; only broken tests means ship with a test fix; no failures means ship.
+
 ### Failure-Triage
 
 | Metric | Definition |

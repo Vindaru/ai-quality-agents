@@ -24,6 +24,10 @@ test_to_code:
   unsafe_code_count: {max: 0}       # generated code that tried an import, exec, open, ...
   pass_on_correct_rate: {min: 0.90} # a test that fails on a correct service is a false alarm
   mutation_kill_rate: {min: 0.75}   # share of planted bugs at least one generated test catches
+run_and_triage:
+  triage_accuracy: {min: 0.90}      # triage of real pipeline failures vs the injected cause
+  decision_accuracy: {min: 1.0}     # block / rerun / ship decision vs what the true causes call for
+  escaped_defect_count: {max: 1}    # bugged builds that would ship; baseline 1 (E.164), ratchet to 0
 judge:
   # Floors set from the first baseline so the judge cannot quietly get worse. They are not the
   # bar for trusting it; that is judge_trust below.

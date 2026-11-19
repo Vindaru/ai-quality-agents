@@ -1,10 +1,10 @@
 {
   "run": {
-    "timestamp": "2026-11-19 15:12 UTC",
+    "timestamp": "2026-11-19 15:15 UTC",
     "model": "mock-heuristic-v1",
     "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "1f3f54e",
+    "git_sha": "3242492",
     "python": "3.13.18"
   },
   "suites": {
@@ -435,7 +435,7 @@
         {
           "case": "C05",
           "type": "test_fails_on_correct_service",
-          "detail": "test_invalid_phone_rejected fails on the correct service: assertion failed"
+          "detail": "test_invalid_phone_rejected fails on the correct service: assert r.status == 400 (line 3)"
         },
         {
           "case": "stop_case_sensitive",
@@ -446,6 +446,110 @@
           "case": "no_e164",
           "type": "mutant_survived",
           "detail": "no generated test fails when phones are stored as typed, not normalised to E.164"
+        }
+      ]
+    },
+    "run_and_triage": {
+      "metrics": {
+        "triage_accuracy": 1.0,
+        "decision_accuracy": 1.0,
+        "escaped_defect_count": 1,
+        "failures_triaged": 26
+      },
+      "counts": {
+        "runs": 7,
+        "tests": 11,
+        "failures": 26
+      },
+      "confusion_matrix": {
+        "product_bug": {
+          "product_bug": 3,
+          "automation_issue": 0,
+          "environment": 0,
+          "test_data": 0
+        },
+        "automation_issue": {
+          "product_bug": 0,
+          "automation_issue": 5,
+          "environment": 0,
+          "test_data": 0
+        },
+        "environment": {
+          "product_bug": 0,
+          "automation_issue": 0,
+          "environment": 11,
+          "test_data": 0
+        },
+        "test_data": {
+          "product_bug": 0,
+          "automation_issue": 0,
+          "environment": 0,
+          "test_data": 7
+        }
+      },
+      "runs": [
+        {
+          "id": "R1",
+          "bug": null,
+          "fault": null,
+          "failed": 1,
+          "decision": "ship_with_test_fix",
+          "expected_decision": "ship_with_test_fix"
+        },
+        {
+          "id": "R2",
+          "bug": "unknown_referral_200",
+          "fault": null,
+          "failed": 2,
+          "decision": "block",
+          "expected_decision": "block"
+        },
+        {
+          "id": "R3",
+          "bug": "no_consent_audit",
+          "fault": null,
+          "failed": 2,
+          "decision": "block",
+          "expected_decision": "block"
+        },
+        {
+          "id": "R4",
+          "bug": "expired_token_accepted",
+          "fault": null,
+          "failed": 2,
+          "decision": "block",
+          "expected_decision": "block"
+        },
+        {
+          "id": "R5",
+          "bug": null,
+          "fault": "gateway_down",
+          "failed": 11,
+          "decision": "rerun",
+          "expected_decision": "rerun"
+        },
+        {
+          "id": "R6",
+          "bug": null,
+          "fault": "seed_missing",
+          "failed": 7,
+          "decision": "rerun",
+          "expected_decision": "rerun"
+        },
+        {
+          "id": "R7",
+          "bug": "no_e164",
+          "fault": null,
+          "failed": 1,
+          "decision": "ship_with_test_fix",
+          "expected_decision": "ship_with_test_fix"
+        }
+      ],
+      "findings": [
+        {
+          "case": "R7",
+          "type": "escaped_defect",
+          "detail": "build with bug no_e164 would ship: no generated test failed"
         }
       ]
     },
@@ -695,6 +799,33 @@
       "value": 0.7778,
       "bound": {
         "min": 0.75
+      },
+      "passed": true
+    },
+    {
+      "suite": "run_and_triage",
+      "metric": "triage_accuracy",
+      "value": 1.0,
+      "bound": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "suite": "run_and_triage",
+      "metric": "decision_accuracy",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "run_and_triage",
+      "metric": "escaped_defect_count",
+      "value": 1,
+      "bound": {
+        "max": 1
       },
       "passed": true
     },

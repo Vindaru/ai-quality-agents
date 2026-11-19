@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import traceback
 from dataclasses import dataclass
 from typing import Any
 
@@ -126,15 +127,27 @@ def safety_problem(code: str, test_name: str) -> str:
     return ""
 
 
-def run_test(test: GeneratedTest, service: ReferralService) -> tuple[str, str]:
+def run_test(
+    test: GeneratedTest, service: ReferralService, fault: str | None = None
+) -> tuple[str, str]:
     """Run one generated test against one service. Returns (outcome, message) with outcome
-    pass, fail (an assertion failed) or error (the test itself crashed)."""
+    pass, fail (an assertion failed; the message quotes the failing line) or error (the test
+    crashed; the message is the exception)."""
     namespace: dict[str, Any] = {"__builtins__": SAFE_BUILTINS}
     try:
         exec(compile(test.code, f"<{test.test_name}>", "exec"), namespace)  # noqa: S102 - vetted
-        namespace[test.test_name](ServiceClient(service))
+        namespace[test.test_name](ServiceClient(service, fault))
     except AssertionError as exc:
-        return "fail", str(exc)[:200] or "assertion failed"
+        frames = [
+            f
+            for f in traceback.extract_tb(exc.__traceback__)
+            if f.filename == f"<{test.test_name}>"
+        ]
+        line = ""
+        if frames and frames[-1].lineno:
+            line = test.code.splitlines()[frames[-1].lineno - 1].strip()
+            line = f"{line} (line {frames[-1].lineno})"
+        return "fail", (str(exc) or line or "assertion failed")[:200]
     except Exception as exc:  # noqa: BLE001 - any crash in generated code is a test error
         return "error", f"{type(exc).__name__}: {exc}"[:200]
     return "pass", ""

@@ -24,6 +24,7 @@ def test_report_has_every_required_section(markdown):
         "## 3. Outreach safety",
         "## 4. LLM-as-judge for scenario quality",
         "## 5. Test-to-Code agent",
+        "## 6. Run and triage",
         "## What the evals caught",
         "## Known limitations",
     ]:
@@ -32,7 +33,7 @@ def test_report_has_every_required_section(markdown):
 
 def test_report_names_the_model_and_gate_result(markdown):
     assert "mock-heuristic-v1" in markdown and "deterministic offline mock" in markdown
-    assert "**PASSED** (20/20 checks)" in markdown
+    assert "**PASSED** (23/23 checks)" in markdown
 
 
 def test_report_lists_three_to_five_examples(markdown):
