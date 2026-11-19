@@ -9,14 +9,15 @@ agent turns user stories into traceable Gherkin scenarios. The **Failure-Triage*
 failed tests into product bug, automation issue, environment or test data. A third component, an
 SMS **outreach assistant**, is the target of a safety eval set covering prompt injection, PHI
 leakage and requests for another member's data. All three are scored against golden sets on every
-push. A quality gate fails CI when a metric drops below its threshold. The idea is simple: an AI
+push. An **LLM-as-judge** grades the quality of every generated test scenario, and is itself
+calibrated against human labels before its grades are allowed to gate anything. A quality gate fails CI when a metric drops below its threshold. The idea is simple: an AI
 feature needs regression tests just like code does, and "it looked fine when I tried it" is not a
 test. The domain is healthcare member outreach and referrals, and all data is synthetic.
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-10-16 21:20 UTC,
-quality gate **passed, 11/11 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 14:50 UTC,
+quality gate **passed, 14/14 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -34,10 +35,19 @@ Full report with the confusion matrix, failure examples and limitations:
 | Outreach safety | phi_in_prompt_count | 0 | ≤ 0 |
 | Outreach safety | injection_resistance | 100.0% | ≥ 100.0% |
 | Outreach safety | refusal_correctness | 96.4% | ≥ 90.0% |
+| Scenario judge | agreement with human labels | 71.9% (95% CI 54.6% to 84.4%) | ≥ 65.0% |
+| Scenario judge | Cohen's kappa | 0.45 | ≥ 0.40 floor; 0.60 to be trusted |
+| Scenario judge | scenario_pass_rate | 15.0% (9 of 60) | gated only once the judge is trusted |
 
 The safety set is also run with the guardrails switched off: the same model then leaks PHI in
 10 replies and resists only 30.0% of injection attempts. That ablation is the evidence that the
 guardrails, not the model, are doing the work.
+
+The mock judge agrees with the human labels on 23 of 32 scenarios (kappa 0.45). That is below
+the trust bar, so its verdict on the agent's scenarios is reported but does not block a merge.
+Most of its misses are correct tests written in different words, which a keyword-minded judge
+fails. That is the calibration doing its job: it shows how far a judge can be trusted before
+anyone relies on it.
 
 ## Architecture
 
@@ -57,6 +67,10 @@ flowchart LR
     tri --> scorers
     trillm --> scorers
     out --> scorers
+    gen --> judge[Scenario judge]
+    labels[(Human-labeled calibration set)] --> judge
+    judge -- agreement, kappa --> gate
+    judge -- scenario_pass_rate, once trusted --> gate
     scorers --> gate{Quality gate} --> ci[CI pass / fail]
     scorers --> report[reports/eval_report.md]
 ```
@@ -91,6 +105,11 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   a new case, the same way a bug becomes a unit test.
 - **Thresholds as a CI gate.** One file, [data/thresholds.yaml](data/thresholds.yaml), defines
   "good enough to merge". Zero-tolerance metrics (PHI leaks) are separate from statistical ones.
+- **A judge is a model too.** The scenario judge answers four yes/no checks (tests the
+  criterion, concrete When, observable Then, correct tag) instead of a 1-10 score, because binary
+  checks are easier to label and calibrate. The verdict is computed from the checks, never taken
+  from the model. Agreement and Cohen's kappa against 32 human-labeled scenarios are gated; the
+  judge's grades only join the gate once kappa ≥ 0.60 and agreement ≥ 80%.
 - **Honest numbers.** Small sets get a 95% confidence interval; the report lists what the evals
   caught and what they cannot measure.
 
@@ -113,17 +132,20 @@ More detail on metric definitions and how to extend the sets:
 src/aiq/llm.py                    LLM interface, deterministic mock, optional real provider, PHI-guarded wrapper
 src/aiq/agents/                   test_generator, failure_triage, outreach_assistant
 src/aiq/guards/phi_guard.py       PHI detection and redaction with a value-free audit log
-src/aiq/evals/scorers.py          schema, PHI leak, injection, traceability, duplicates, classification, Wilson CI
+src/aiq/evals/scorers.py          schema, PHI leak, injection, traceability, duplicates, classification, Wilson CI, Cohen's kappa
+src/aiq/evals/judge.py            LLM-as-judge for scenario quality: rubric, prompt, parsing
 src/aiq/evals/runner.py           runs golden sets, applies scorers, enforces thresholds
 src/aiq/report.py                 writes reports/eval_report.md and reports/eval_results.json
 data/golden/                      14 stories, 48 labeled failures, 28 safety prompts (all synthetic)
-data/thresholds.yaml              the quality gate
+data/judge/calibration.yaml       32 human-labeled scenarios the judge is calibrated against
+data/thresholds.yaml              the quality gate, including the judge's trust bar
 ```
 
 ## What I'd add next
 
-- **LLM-as-judge with calibration:** grade scenario quality semantically instead of by keywords,
-  and measure the judge's agreement with human labels before trusting it.
+- **Judge on a real model:** run the calibration with `AIQ_JUDGE_MODEL` set to a real model and
+  commit the report; a different model family from the agent avoids self-preference.
+- **Judge for triage evidence and outreach tone:** the same calibrate-then-gate pattern.
 - **Multilingual outreach evals:** more languages, and multilingual injection detection (the
   report shows a Vietnamese injection the current filter misses).
 - **A Playwright UI layer** that executes the generated UI scenarios against a demo app.

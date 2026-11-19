@@ -21,8 +21,9 @@ from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent
 from aiq.agents.outreach_assistant import CANARY, Member, OutreachAssistant
 from aiq.agents.test_generator import RequirementsToTestAgent, Story
 from aiq.evals import scorers
+from aiq.evals.judge import CHECKS, JUDGE_VERSION, ScenarioJudge
 from aiq.guards.phi_guard import scan
-from aiq.llm import LLM, GuardedLLM, get_provider
+from aiq.llm import LLM, GuardedLLM, get_judge_provider, get_provider
 from aiq.report import write_reports
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -290,6 +291,105 @@ def eval_safety(provider: LLM, data_dir: Path = DATA / "golden") -> dict[str, An
     }
 
 
+# --- LLM judge -------------------------------------------------------------------------------
+
+
+def eval_judge(
+    judge_llm: LLM,
+    generated: list[dict[str, Any]],
+    data_dir: Path = DATA / "golden",
+    judge_dir: Path = DATA / "judge",
+) -> dict[str, Any]:
+    """Calibrate the scenario judge against human labels, then use it to grade every scenario
+    the Requirements-to-Test agent produced. The second number only means something while the
+    first one passes its gate."""
+    judge = ScenarioJudge(judge_llm)
+    calibration = _load("calibration.yaml", judge_dir)["items"]
+    human, machine, cases, findings = [], [], [], []
+    per_check_agree = dict.fromkeys(CHECKS, 0)
+    errors = 0
+    for item in calibration:
+        result = judge.grade(item["criterion"], item["scenario"])
+        truth = "pass" if all(item["human"][c] for c in CHECKS) else "fail"
+        errors += result.verdict == "error"
+        verdict = "fail" if result.verdict == "error" else result.verdict
+        human.append(truth)
+        machine.append(verdict)
+        disagreed = [c for c in CHECKS if result.checks.get(c) != item["human"][c]]
+        for c in CHECKS:
+            per_check_agree[c] += c not in disagreed
+        cases.append(
+            {
+                "id": item["id"],
+                "source": item["source"],
+                "human": truth,
+                "judge": result.verdict,
+                "checks_disagreed": disagreed,
+                "reasons": result.reasons,
+                "error": result.error,
+            }
+        )
+        if verdict != truth:
+            findings.append(
+                {
+                    "case": item["id"],
+                    "type": "judge_false_pass" if verdict == "pass" else "judge_false_fail",
+                    "detail": f"human {truth}, judge {verdict}; checks disagreed: "
+                    f"{', '.join(disagreed) or 'none'}"
+                    + (f" ({item['note']})" if item.get("note") else ""),
+                }
+            )
+
+    n = len(calibration)
+    agree = sum(h == m for h, m in zip(human, machine, strict=True))
+    low, high = scorers.wilson_interval(agree, n)
+    # The judge's job in a gate is to catch bad scenarios, so "fail" is the positive class.
+    cm = scorers.classification_metrics(human, machine, ["pass", "fail"])
+    fail = cm["per_class"]["fail"]
+
+    stories = {s["id"]: s for s in _load("test_generator.yaml", data_dir)["stories"]}
+    graded = passed = 0
+    check_fails = dict.fromkeys(CHECKS, 0)
+    for case in generated:
+        criteria = {c["id"]: c["text"] for c in stories[case["story"]]["acceptance_criteria"]}
+        for scenario in case["scenarios"]:
+            criterion = criteria.get(scenario["source_criterion_id"])
+            if criterion is None:  # untraced scenarios are already counted by traceability
+                continue
+            result = judge.grade(criterion, scenario)
+            graded += 1
+            passed += result.passed
+            for c, ok in result.checks.items():
+                check_fails[c] += not ok
+            scenario["judge"] = {"verdict": result.verdict, "checks": result.checks}
+
+    metrics = {
+        "agreement": _ratio(agree, n),
+        "agreement_ci95_low": round(low, 4),
+        "agreement_ci95_high": round(high, 4),
+        "cohen_kappa": round(scorers.cohen_kappa(human, machine), 4),
+        "fail_precision": round(fail["precision"], 4),
+        "fail_recall": round(fail["recall"], 4),
+        "judge_error_count": errors,
+        "scenario_pass_rate": _ratio(passed, graded),
+    }
+    return {
+        "metrics": metrics,
+        "counts": {
+            "calibration_items": n,
+            "human_pass": human.count("pass"),
+            "scenarios_graded": graded,
+            "scenarios_passed": passed,
+        },
+        "judge": {"version": JUDGE_VERSION, "model": judge_llm.name},
+        "per_check_agreement": {c: _ratio(v, n) for c, v in per_check_agree.items()},
+        "scenario_check_fail_rate": {c: _ratio(v, graded) for c, v in check_fails.items()},
+        "confusion_matrix": cm["confusion_matrix"],
+        "findings": findings,
+        "cases": cases,
+    }
+
+
 # --- gate ------------------------------------------------------------------------------------
 
 
@@ -307,6 +407,26 @@ def apply_gate(suites: dict[str, Any], thresholds: dict[str, Any]) -> list[dict[
     return rows
 
 
+def judge_trusted(suites: dict[str, Any], trust: dict[str, Any]) -> bool:
+    m = suites["judge"]["metrics"]
+    return (
+        m["judge_error_count"] == 0
+        and m["cohen_kappa"] >= trust["min_cohen_kappa"]
+        and m["agreement"] >= trust["min_agreement"]
+    )
+
+
+def gate(suites: dict[str, Any], thresholds: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
+    """All gate rows, plus whether the judge is calibrated well enough to gate on its grades."""
+    thresholds = dict(thresholds)
+    trust = thresholds.pop("judge_trust")
+    rows = apply_gate(suites, thresholds)
+    trusted = judge_trusted(suites, trust)
+    if trusted:
+        rows += apply_gate(suites, {"judge": {"scenario_pass_rate": trust["scenario_pass_rate"]}})
+    return rows, trusted
+
+
 def _git_sha() -> str:
     try:
         out = subprocess.run(
@@ -321,26 +441,37 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def run_all(provider: LLM | None = None, data_dir: Path = DATA) -> dict[str, Any]:
-    provider = provider or get_provider()
+def run_all(
+    provider: LLM | None = None, data_dir: Path = DATA, judge_provider: LLM | None = None
+) -> dict[str, Any]:
+    if provider is None:
+        provider = get_provider()
+        judge_provider = judge_provider or get_judge_provider()
+    judge_provider = judge_provider or provider
     golden = data_dir / "golden"
+    test_generator = eval_test_generator(GuardedLLM(provider), golden)
     suites = {
-        "test_generator": eval_test_generator(GuardedLLM(provider), golden),
+        "test_generator": test_generator,
         "triage": eval_triage(GuardedLLM(provider), golden),
         "safety": eval_safety(provider, golden),
+        "judge": eval_judge(
+            GuardedLLM(judge_provider), test_generator["cases"], golden, data_dir / "judge"
+        ),
     }
-    gate = apply_gate(suites, _load("thresholds.yaml", data_dir))
+    rows, trusted = gate(suites, _load("thresholds.yaml", data_dir))
     return {
         "run": {
             "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
             "model": provider.name,
+            "judge_model": judge_provider.name,
             "offline_mock": provider.name.startswith("mock"),
             "git_sha": _git_sha(),
             "python": platform.python_version(),
         },
         "suites": suites,
-        "gate": gate,
-        "passed": all(row["passed"] for row in gate),
+        "gate": rows,
+        "judge_trusted": trusted,
+        "passed": all(row["passed"] for row in rows),
     }
 
 
@@ -372,10 +503,14 @@ def main(argv: list[str] | None = None) -> int:
         write_outputs(results)
         print(f"Evals finished with model {results['run']['model']}; wrote reports/ and outputs/")
         _print_gate(results["gate"])
+        if not results["judge_trusted"]:
+            print("  note  judge below the trust bar: scenario_pass_rate reported, not gated")
         return 0
     summary = json.loads((REPORTS / "eval_results.json").read_text(encoding="utf-8"))
-    rows = apply_gate(summary["suites"], _load("thresholds.yaml", DATA))
+    rows, trusted = gate(summary["suites"], _load("thresholds.yaml", DATA))
     _print_gate(rows)
+    if not trusted:
+        print("  note  judge below the trust bar: scenario_pass_rate reported, not gated")
     failed = [r for r in rows if not r["passed"]]
     verdict = "FAILED" if failed else "PASSED"
     print(f"Quality gate {verdict}: {len(rows) - len(failed)}/{len(rows)} checks passed")

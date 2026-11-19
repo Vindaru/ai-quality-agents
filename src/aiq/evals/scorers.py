@@ -126,3 +126,21 @@ def wilson_interval(successes: int, total: int, z: float = 1.96) -> tuple[float,
     centre = (p + z**2 / (2 * total)) / denom
     half = z * math.sqrt(p * (1 - p) / total + z**2 / (4 * total**2)) / denom
     return max(0.0, centre - half), min(1.0, centre + half)
+
+
+# --- judge calibration ----------------------------------------------------------------------
+
+
+def cohen_kappa(a: Sequence[Any], b: Sequence[Any]) -> float:
+    """Agreement between two raters beyond what chance would give. 1 = perfect, 0 = no better
+    than chance, below 0 = worse than chance. Raw agreement alone looks good when one label
+    dominates; kappa does not."""
+    if len(a) != len(b) or not a:
+        raise ValueError("raters must label the same, non-empty set of items")
+    n = len(a)
+    observed = sum(x == y for x, y in zip(a, b, strict=True)) / n
+    labels = set(a) | set(b)
+    expected = sum((list(a).count(k) / n) * (list(b).count(k) / n) for k in labels)
+    if expected == 1.0:  # both raters used one identical label throughout
+        return 1.0
+    return (observed - expected) / (1 - expected)

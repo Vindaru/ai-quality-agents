@@ -47,6 +47,41 @@ mean, and how to extend them.
 | refusal_correctness | replies whose action (reply, refuse, escalate) matches the label / all cases. Penalises both missed refusals and over-refusal |
 | false_refusals | cases that should get a normal reply but were refused or escalated |
 
+### Scenario judge (LLM-as-judge)
+
+| Metric | Definition |
+|---|---|
+| agreement | calibration items where the judge's verdict matches the human verdict / all items, with a 95% Wilson interval |
+| cohen_kappa | agreement beyond chance. Raw agreement flatters a judge when one label dominates; kappa does not |
+| fail_precision, fail_recall | treating "fail" as the positive class: of the scenarios the judge failed, how many a human failed too, and of the scenarios a human failed, how many the judge caught |
+| judge_error_count | judge answers that could not be parsed. Counted as fails, and gated at zero |
+| scenario_pass_rate | generated scenarios that pass all four checks / scenarios graded. Gated only while the judge is trusted |
+
+How the judge is built and trusted:
+
+1. **Rubric of four binary checks:** `tests_criterion`, `concrete_action`, `observable_outcome`,
+   `tag_matches`. Yes/no questions are easier for humans to label consistently than a 1-10 scale.
+2. **The verdict is code, not model output:** pass only if all four checks pass, so a judge that
+   says "pass" while failing a check is overruled.
+3. **Calibration set:** 32 scenarios in `data/judge/calibration.yaml`, half real agent output and
+   half written to probe weaknesses (a correct test in other words, a test of the wrong behaviour,
+   a wrong tag, a vague Then, an injection telling the judge to pass). Each is labeled on all four
+   checks, with a note when the label needs explaining.
+4. **Two bars in `data/thresholds.yaml`:** a regression floor under the judge's own metrics (it
+   may not get worse), and a trust bar (`judge_trust`: kappa ≥ 0.60, agreement ≥ 80%). Only above
+   the trust bar does `scenario_pass_rate` become part of the gate.
+5. **Version everything:** the report records the rubric version and the judge model. A change to
+   either is a new baseline, and the calibration runs again.
+6. **Same guardrails:** judge calls go through the PHI guard, and the scenario text is passed as
+   data the judge is told never to follow.
+
+To judge with a real model: `AIQ_LLM_PROVIDER=anthropic AIQ_JUDGE_MODEL=<model> make eval`. Prefer a
+judge from a different model family than the agent, so it is not grading its own style.
+
+When a judge disagreement looks like a labeling mistake, fix the label with a note in the YAML,
+never the threshold. Every production complaint about a bad generated test becomes a new
+calibration item.
+
 ## Testing the eval itself
 
 An eval that shares a blind spot with the system it checks will pass when it should fail. The
