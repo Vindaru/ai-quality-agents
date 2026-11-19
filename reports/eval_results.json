@@ -1,10 +1,10 @@
 {
   "run": {
-    "timestamp": "2026-11-19 15:08 UTC",
+    "timestamp": "2026-11-19 15:12 UTC",
     "model": "mock-heuristic-v1",
     "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "5ad9f8a",
+    "git_sha": "1f3f54e",
     "python": "3.13.18"
   },
   "suites": {
@@ -367,6 +367,88 @@
         }
       ]
     },
+    "test_to_code": {
+      "metrics": {
+        "runnable_rate": 1.0,
+        "unsafe_code_count": 0,
+        "pass_on_correct_rate": 0.9091,
+        "mutation_kill_rate": 0.7778
+      },
+      "counts": {
+        "scenarios": 11,
+        "mutants": 9,
+        "good_tests": 10
+      },
+      "mutants": {
+        "stop_case_sensitive": {
+          "bug": "only upper-case STOP opts out",
+          "killed_by": []
+        },
+        "no_consent_audit": {
+          "bug": "opt-out is not written to consent_audit",
+          "killed_by": [
+            "C03"
+          ]
+        },
+        "sms_ignores_opt_out": {
+          "bug": "SMS is sent to opted-out members",
+          "killed_by": [
+            "C02"
+          ]
+        },
+        "short_phone_accepted": {
+          "bug": "9-digit phone numbers are accepted",
+          "killed_by": [
+            "C07"
+          ]
+        },
+        "wrong_invalid_code": {
+          "bug": "invalid phone numbers return 400 instead of 422",
+          "killed_by": [
+            "C07"
+          ]
+        },
+        "no_e164": {
+          "bug": "phones are stored as typed, not normalised to E.164",
+          "killed_by": []
+        },
+        "unknown_referral_200": {
+          "bug": "status update for an unknown referral returns 200",
+          "killed_by": [
+            "C09"
+          ]
+        },
+        "expired_token_accepted": {
+          "bug": "expired partner tokens are accepted",
+          "killed_by": [
+            "C10"
+          ]
+        },
+        "no_referral_audit": {
+          "bug": "status changes are not written to referral_audit",
+          "killed_by": [
+            "C11"
+          ]
+        }
+      },
+      "findings": [
+        {
+          "case": "C05",
+          "type": "test_fails_on_correct_service",
+          "detail": "test_invalid_phone_rejected fails on the correct service: assertion failed"
+        },
+        {
+          "case": "stop_case_sensitive",
+          "type": "mutant_survived",
+          "detail": "no generated test fails when only upper-case STOP opts out"
+        },
+        {
+          "case": "no_e164",
+          "type": "mutant_survived",
+          "detail": "no generated test fails when phones are stored as typed, not normalised to E.164"
+        }
+      ]
+    },
     "judge": {
       "metrics": {
         "agreement": 0.7188,
@@ -577,6 +659,42 @@
       "value": 0.9643,
       "bound": {
         "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "runnable_rate",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "unsafe_code_count",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "pass_on_correct_rate",
+      "value": 0.9091,
+      "bound": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "suite": "test_to_code",
+      "metric": "mutation_kill_rate",
+      "value": 0.7778,
+      "bound": {
+        "min": 0.75
       },
       "passed": true
     },

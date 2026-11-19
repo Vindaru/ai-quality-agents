@@ -389,3 +389,115 @@ def _mock_test_repair(system: str, prompt: str) -> str:
         scenario["tags"] = ["negative" if t == "positive" else t for t in scenario["tags"]]
     scenario["steps"] = [given, when, then]
     return json.dumps(scenario)
+
+
+# Code the mock "writes" for each kind of scenario, keyed by a phrase in the criterion. Like a
+# real model it is mostly right, with blind spots the mutation score exposes: the trailing-
+# spaces test never tries lower case, the E.164 test checks only the status code, and the
+# invalid-phone test guesses 400 instead of reading the contract's 422.
+_CODEGEN: list[tuple[str, str, str]] = [
+    (
+        "trailing spaces",
+        "test_stop_with_spaces_opts_out",
+        """
+    r = client.post("/members/M-1/replies", json={"text": "STOP  "})
+    assert r.status == 200
+    assert client.get("/members/M-1").json["sms_opt_out"] is True""",
+    ),
+    (
+        "replies STOP",
+        "test_stop_sets_opt_out",
+        """
+    r = client.post("/members/M-1/replies", json={"text": "STOP"})
+    assert r.status == 200
+    assert client.get("/members/M-1").json["sms_opt_out"] is True""",
+    ),
+    (
+        "no further outreach",
+        "test_no_sms_after_opt_out",
+        """
+    client.post("/members/M-1/replies", json={"text": "STOP"})
+    r = client.post("/outreach/sms", json={"member_id": "M-1", "message": "hi"})
+    assert r.status == 409
+    assert r.json["error"] == "opted_out\"""",
+    ),
+    (
+        "consent audit",
+        "test_opt_out_is_audited",
+        """
+    client.post("/members/M-1/replies", json={"text": "STOP"})
+    rows = client.get("/audit/consent_audit").json["rows"]
+    assert len(rows) == 1
+    assert rows[0]["event"] == "opt_out" and rows[0]["timestamp"]""",
+    ),
+    (
+        "phone number is invalid",
+        "test_invalid_phone_rejected",
+        """
+    r = client.put("/members/M-1/phone", json={"phone": "555-CALL-NOW"})
+    assert r.status == 400""",
+    ),
+    (
+        "E.164",
+        "test_phone_normalised",
+        """
+    r = client.put("/members/M-1/phone", json={"phone": "(555) 010-0199"})
+    assert r.status == 200""",
+    ),
+    (
+        "fewer than 10 digits",
+        "test_short_phone_rejected",
+        """
+    r = client.put("/members/M-1/phone", json={"phone": "555010012"})
+    assert r.status == 422
+    assert r.json["error"] == "phone_too_short\"""",
+    ),
+    (
+        "unknown referral",
+        "test_unknown_referral_404",
+        """
+    r = client.post("/referrals/R-404/status", json={"status": "COMPLETED"},
+                    headers={"Authorization": "tok-valid"})
+    assert r.status == 404""",
+    ),
+    (
+        "expired partner token",
+        "test_expired_token_401",
+        """
+    r = client.post("/referrals/R-1/status", json={"status": "COMPLETED"},
+                    headers={"Authorization": "tok-expired"})
+    assert r.status == 401
+    assert client.get("/referrals/R-1").json["status"] == "SENT\"""",
+    ),
+    (
+        "audit log",
+        "test_status_change_audited",
+        """
+    client.post("/referrals/R-1/status", json={"status": "COMPLETED"},
+                headers={"Authorization": "tok-valid"})
+    rows = client.get("/audit/referral_audit").json["rows"]
+    assert rows == [{"referral_id": "R-1", "status": "COMPLETED"}]""",
+    ),
+    (
+        "COMPLETED",
+        "test_referral_completed",
+        """
+    r = client.post("/referrals/R-1/status", json={"status": "COMPLETED"},
+                    headers={"Authorization": "tok-valid"})
+    assert r.status == 200
+    assert client.get("/referrals/R-1").json["status"] == "COMPLETED\"""",
+    ),
+]
+
+
+@mock_behavior("test_codegen")
+def _mock_test_codegen(system: str, prompt: str) -> str:
+    criterion = input_payload(prompt)["acceptance_criterion"]
+    for phrase, name, body in _CODEGEN:
+        if phrase.casefold() in criterion.casefold():
+            return json.dumps({"test_name": name, "code": f"def {name}(client):{body}\n"})
+    # Nothing it recognises: a test that runs but checks almost nothing, as weak models do.
+    body = '\n    assert client.get("/members/M-1").status == 200'
+    return json.dumps(
+        {"test_name": "test_member_exists", "code": f"def test_member_exists(client):{body}\n"}
+    )

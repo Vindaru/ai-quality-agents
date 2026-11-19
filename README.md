@@ -6,7 +6,9 @@
 
 Two small QA agents and the eval harness that keeps them honest. The **Requirements-to-Test**
 agent turns user stories into traceable Gherkin scenarios, then reviews its own draft with
-deterministic lint rules and sends each flagged scenario back to the model once to be fixed. The **Failure-Triage** agent sorts
+deterministic lint rules and sends each flagged scenario back to the model once to be fixed.
+The **Test-to-Code** agent turns approved scenarios into runnable API tests for a small demo
+referral service, and mutation testing checks that those tests actually catch bugs. The **Failure-Triage** agent sorts
 failed tests into product bug, automation issue, environment or test data. A third component, an
 SMS **outreach assistant**, is the target of a safety eval set covering prompt injection, PHI
 leakage and requests for another member's data. All three are scored against golden sets on every
@@ -17,8 +19,8 @@ test. The domain is healthcare member outreach and referrals, and all data is sy
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:08 UTC,
-quality gate **passed, 16/16 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:12 UTC,
+quality gate **passed, 20/20 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -31,6 +33,9 @@ Full report with the confusion matrix, failure examples and limitations:
 | Requirements-to-Test | expected_scenario_recall | 86.8% | ≥ 75.0% |
 | Requirements-to-Test | lint_issue_rate (after one repair round) | 46.7% (85.0% on the first draft) | ≤ 50.0% |
 | Requirements-to-Test | repair_success_rate | 45.1% | ≥ 40.0% |
+| Test-to-Code | pass_on_correct_rate | 90.9% (10 of 11) | ≥ 90.0% |
+| Test-to-Code | mutation_kill_rate | 77.8% (7 of 9 planted bugs) | ≥ 75.0% |
+| Test-to-Code | unsafe_code_count | 0 | ≤ 0 |
 | Failure-Triage | accuracy | 85.4% | ≥ 80.0% |
 | Failure-Triage | accuracy 95% CI | 72.8% to 92.8% | not gated |
 | Failure-Triage | llm_routed_rate | 43.8% | ≤ 50.0% |
@@ -57,12 +62,20 @@ generated scenarios; with it off, 9 of 60. The judge never sees the lint rules t
 so it is an independent check that the repair improves the tests and is not just satisfying its
 own linter. The cost is visible too: 65 model calls instead of 14.
 
+Two planted bugs survive the generated tests: lower-case `stop` is not treated as an opt-out, and
+phone numbers are not normalised to E.164. Both tests exist and run green; they just never check
+the value the scenario promises. Coverage would call them covered; mutation testing shows they
+are not.
+
 ## Architecture
 
 ```mermaid
 flowchart LR
     story[User story + acceptance criteria] --> gen[Requirements-to-Test agent]
     gen -- lint flags a scenario --> fix[One repair round] --> gen
+    gen -- approved scenarios --> code[Test-to-Code agent] --> safe{AST allowlist}
+    safe --> svc[(Demo referral service + 9 mutants)]
+    svc -- pass on correct, kills per mutant --> scorers
     fail[Failed test: error, stack, logs] --> rules{Triage rules}
     rules -- confident --> tri[Triage result]
     rules -- unsure --> trillm[Triage via LLM]
@@ -120,6 +133,13 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   only if it is schema valid, still traces to the same criterion and has fewer problems. One round
   bounds the cost. The judge, which is separate from the lint, grades the result with the repair
   on and off.
+- **Generated code is untrusted.** Test-to-Code output is parsed and checked against an AST
+  allowlist (one `test_*` function, no imports, no `exec`/`eval`/`open`, no dunder access), then
+  run with a minimal set of builtins against an in-process service. That is defence in depth for
+  an offline demo, not a hard sandbox; real-model code belongs in a locked-down process too.
+- **Mutation testing, not coverage.** Nine copies of the demo service each carry one planted bug.
+  A generated suite is only as good as the bugs it catches, and only tests that pass on the
+  correct service count, so a test that always fails cannot inflate the score.
 - **A judge is a model too.** The scenario judge answers four yes/no checks (tests the
   criterion, concrete When, observable Then, correct tag) instead of a 1-10 score, because binary
   checks are easier to label and calibrate. The verdict is computed from the checks, never taken
@@ -145,18 +165,31 @@ More detail on metric definitions and how to extend the sets:
 
 ```
 src/aiq/llm.py                    LLM interface, deterministic mock, optional real provider, PHI-guarded wrapper
-src/aiq/agents/                   test_generator, failure_triage, outreach_assistant
+src/aiq/agents/                   test_generator, test_to_code, failure_triage, outreach_assistant
+src/aiq/demo/referral_service.py  the system under test for generated tests, its API contract and 9 mutants
 src/aiq/guards/phi_guard.py       PHI detection and redaction with a value-free audit log
 src/aiq/evals/scorers.py          schema, PHI leak, injection, traceability, duplicates, classification, Wilson CI, Cohen's kappa
 src/aiq/evals/judge.py            LLM-as-judge for scenario quality: rubric, prompt, parsing
 src/aiq/evals/runner.py           runs golden sets, applies scorers, enforces thresholds
 src/aiq/report.py                 writes reports/eval_report.md and reports/eval_results.json
 data/golden/                      14 stories, 48 labeled failures, 28 safety prompts (all synthetic)
+data/golden/test_to_code.yaml     11 approved scenarios for the three stories the demo service implements
 data/judge/calibration.yaml       32 human-labeled scenarios the judge is calibrated against
 data/thresholds.yaml              the quality gate, including the judge's trust bar
 ```
 
 ## What I'd add next
+
+This repo is growing into an end-to-end pipeline: requirements → test cases → code → run and
+triage → monitor → fix. Next stages, one PR each:
+
+- **Run and triage:** execute the generated suite and send every failure to the Failure-Triage
+  agent.
+- **Monitor:** trace each agent call as a span, keep every run's metrics, and alert on drift.
+- **Fix:** a Fix agent that patches automation failures and weak tests (the two surviving
+  mutants), keeping a patch only if it passes on the correct service and kills more mutants.
+- **Orchestrate:** one command that runs the whole chain with human approval points and writes a
+  release-readiness report.
 
 - **Judge on a real model:** run the calibration with `AIQ_JUDGE_MODEL` set to a real model and
   commit the report; a different model family from the agent avoids self-preference.

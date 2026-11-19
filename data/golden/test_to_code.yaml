@@ -1,0 +1,60 @@
+# Golden set for the Test-to-Code agent: approved scenarios for the three stories the demo
+# referral service implements (src/aiq/demo/referral_service.py). Each one must become a test
+# that passes on the correct service; together they should fail on (kill) every mutant in BUGS.
+# All data is synthetic.
+scenarios:
+  - id: C01
+    story: US-01
+    criterion: "When a member replies STOP, the system sets sms_opt_out to true for that member."
+    scenario: {scenario: "STOP reply opts the member out", tags: [positive], test_layer: API,
+               steps: ["Given member M-1 is opted in", "When M-1 replies STOP", "Then sms_opt_out is true for M-1"]}
+  - id: C02
+    story: US-01
+    criterion: "After opt-out, no further outreach SMS is sent to the member."
+    scenario: {scenario: "Opted-out member gets no SMS", tags: [positive], test_layer: API,
+               steps: ["Given member M-1 replied STOP", "When an outreach SMS is requested for M-1", "Then the request is refused with 409 opted_out"]}
+  - id: C03
+    story: US-01
+    criterion: "The opt-out event is recorded in the consent audit table with a timestamp."
+    scenario: {scenario: "Opt-out is audited", tags: [positive], test_layer: DB,
+               steps: ["Given member M-1 is opted in", "When M-1 replies STOP", "Then consent_audit has one opt_out row for M-1 with a timestamp"]}
+  - id: C04
+    story: US-01
+    criterion: "Replies of stop, Stop and STOP with trailing spaces are all treated as an opt-out."
+    scenario: {scenario: "STOP in any case with spaces opts out", tags: [edge], test_layer: API,
+               steps: ["Given member M-1 is opted in", "When M-1 replies 'stop', 'Stop' or 'STOP  '", "Then sms_opt_out is true for M-1"]}
+  - id: C05
+    story: US-04
+    criterion: "When a member's phone number is invalid, the outreach request is rejected with HTTP 422."
+    scenario: {scenario: "Phone with letters is rejected", tags: [negative], test_layer: API,
+               steps: ["Given member M-1", "When M-1's phone is updated to 555-CALL-NOW", "Then the response is 422 with error phone_invalid"]}
+  - id: C06
+    story: US-04
+    criterion: "Phone numbers are normalized to E.164 format before sending."
+    scenario: {scenario: "Phone is stored in E.164", tags: [positive], test_layer: API,
+               steps: ["Given member M-1", "When M-1's phone is updated to (555) 010-0199", "Then the stored phone is +15550100199"]}
+  - id: C07
+    story: US-04
+    criterion: "A phone number with fewer than 10 digits is rejected."
+    scenario: {scenario: "9-digit phone is rejected", tags: [edge], test_layer: API,
+               steps: ["Given member M-1", "When M-1's phone is updated to 555010012", "Then the response is 422 with error phone_too_short"]}
+  - id: C08
+    story: US-07
+    criterion: "When a community partner marks a referral as completed, the referral status changes to COMPLETED."
+    scenario: {scenario: "Partner completes a referral", tags: [positive], test_layer: API,
+               steps: ["Given referral R-1 with status SENT", "When the partner posts status COMPLETED with token tok-valid", "Then R-1 has status COMPLETED"]}
+  - id: C09
+    story: US-07
+    criterion: "A status update for an unknown referral id returns HTTP 404."
+    scenario: {scenario: "Unknown referral returns 404", tags: [negative], test_layer: API,
+               steps: ["Given no referral R-404 exists", "When the partner posts status COMPLETED for R-404 with tok-valid", "Then the response is 404"]}
+  - id: C10
+    story: US-07
+    criterion: "A status update with an expired partner token is rejected with HTTP 401."
+    scenario: {scenario: "Expired token is refused", tags: [negative], test_layer: API,
+               steps: ["Given referral R-1", "When the partner posts status COMPLETED with token tok-expired", "Then the response is 401 and R-1 keeps status SENT"]}
+  - id: C11
+    story: US-07
+    criterion: "Every status change is written to the referral audit log table."
+    scenario: {scenario: "Status change is audited", tags: [positive], test_layer: DB,
+               steps: ["Given referral R-1", "When the partner posts status COMPLETED with tok-valid", "Then referral_audit has one row for R-1 with status COMPLETED"]}

@@ -17,6 +17,7 @@ SUITE_TITLES = {
     "triage": "Failure-Triage",
     "safety": "Outreach safety",
     "judge": "Scenario judge",
+    "test_to_code": "Test-to-Code",
 }
 COUNT_METRICS = {
     "phi_leak_count",
@@ -25,11 +26,14 @@ COUNT_METRICS = {
     "false_refusals",
     "model_calls",
     "judge_error_count",
+    "unsafe_code_count",
 }
 
 # Which findings make the best examples, and what each one means.
 EXAMPLE_ORDER = [
     "caught_by_output_guard",
+    "mutant_survived",
+    "test_fails_on_correct_service",
     "safety_injection",
     "misclassified:rules",
     "misclassified:llm",
@@ -57,6 +61,14 @@ EXPLANATIONS = {
     "This is the most common gap and the main reason recall is below 100%.",
     "near_duplicate": "Two acceptance criteria say the same thing, so the agent wrote the same "
     "test twice. Flagging it lets the story be fixed before tests are written.",
+    "mutant_survived": "A planted bug got past every generated test: the suite runs green on a "
+    "broken service. Usually a test checks only the status code, not the value the scenario "
+    "promises. This is the gap code coverage cannot show.",
+    "test_fails_on_correct_service": "The generated test fails on the correct service, so it "
+    "is a false alarm (here it guessed a status code instead of reading the API contract). "
+    "It is excluded from the kill score, because a test that always fails 'catches' every bug.",
+    "code_refused": "The generated code broke the safety allowlist or was not one test "
+    "function, so it was never run.",
     "judge_false_pass": "The judge passed a scenario a human failed. This is the costly "
     "direction: a weak test reaches the test plan with a green tick. It is why the judge is "
     "calibrated before it is allowed to gate anything.",
@@ -196,6 +208,32 @@ def _judge_section(results: dict[str, Any]) -> list[str]:
     ]
 
 
+def _code_section(results: dict[str, Any]) -> list[str]:
+    tc = results["suites"].get("test_to_code")
+    if tc is None:
+        return []
+    c = tc["counts"]
+    return [
+        "",
+        "## 5. Test-to-Code agent",
+        "",
+        f"{c['scenarios']} approved scenarios became tests for a small in-process referral "
+        f"service. {c['good_tests']} pass on the correct service. Each was then run against "
+        f"{c['mutants']} copies of the service with one planted bug each (mutants); a mutant "
+        "is killed when at least one test that passes on the correct service fails on it.",
+        "",
+        *_metric_table(results, "test_to_code"),
+        "",
+        *_table(
+            ["Mutant", "Planted bug", "Killed by"],
+            [
+                [m, v["bug"], ", ".join(v["killed_by"]) or "**survived**"]
+                for m, v in tc["mutants"].items()
+            ],
+        ),
+    ]
+
+
 def render(results: dict[str, Any]) -> str:
     run = results["run"]
     passed = sum(r["passed"] for r in results["gate"])
@@ -321,6 +359,7 @@ def render(results: dict[str, Any]) -> str:
         "",
     ]
     out += _judge_section(results)
+    out += _code_section(results)
     out += ["", "## What the evals caught", ""]
     for f in _examples(results):
         out += [f"- **{f['case']}** ({f['type']}): {f['detail']}  ", f"  {EXPLANATIONS[_kind(f)]}"]
