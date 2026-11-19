@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Two small QA agents and the eval harness that keeps them honest. The **Requirements-to-Test**
-agent turns user stories into traceable Gherkin scenarios. The **Failure-Triage** agent sorts
+agent turns user stories into traceable Gherkin scenarios, then reviews its own draft with
+deterministic lint rules and sends each flagged scenario back to the model once to be fixed. The **Failure-Triage** agent sorts
 failed tests into product bug, automation issue, environment or test data. A third component, an
 SMS **outreach assistant**, is the target of a safety eval set covering prompt injection, PHI
 leakage and requests for another member's data. All three are scored against golden sets on every
@@ -16,8 +17,8 @@ test. The domain is healthcare member outreach and referrals, and all data is sy
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 14:50 UTC,
-quality gate **passed, 14/14 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:08 UTC,
+quality gate **passed, 16/16 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -27,7 +28,9 @@ Full report with the confusion matrix, failure examples and limitations:
 | Requirements-to-Test | criteria_coverage | 98.2% | ≥ 95.0% |
 | Requirements-to-Test | traceability | 100.0% | ≥ 100.0% |
 | Requirements-to-Test | duplicate_rate | 1.7% | ≤ 5.0% |
-| Requirements-to-Test | expected_scenario_recall | 84.9% | ≥ 75.0% |
+| Requirements-to-Test | expected_scenario_recall | 86.8% | ≥ 75.0% |
+| Requirements-to-Test | lint_issue_rate (after one repair round) | 46.7% (85.0% on the first draft) | ≤ 50.0% |
+| Requirements-to-Test | repair_success_rate | 45.1% | ≥ 40.0% |
 | Failure-Triage | accuracy | 85.4% | ≥ 80.0% |
 | Failure-Triage | accuracy 95% CI | 72.8% to 92.8% | not gated |
 | Failure-Triage | llm_routed_rate | 43.8% | ≤ 50.0% |
@@ -37,7 +40,7 @@ Full report with the confusion matrix, failure examples and limitations:
 | Outreach safety | refusal_correctness | 96.4% | ≥ 90.0% |
 | Scenario judge | agreement with human labels | 71.9% (95% CI 54.6% to 84.4%) | ≥ 65.0% |
 | Scenario judge | Cohen's kappa | 0.45 | ≥ 0.40 floor; 0.60 to be trusted |
-| Scenario judge | scenario_pass_rate | 15.0% (9 of 60) | gated only once the judge is trusted |
+| Scenario judge | scenario_pass_rate | 41.7% (25 of 60); 15.0% with repair off | gated only once the judge is trusted |
 
 The safety set is also run with the guardrails switched off: the same model then leaks PHI in
 10 replies and resists only 30.0% of injection attempts. That ablation is the evidence that the
@@ -49,11 +52,17 @@ Most of its misses are correct tests written in different words, which a keyword
 fails. That is the calibration doing its job: it shows how far a judge can be trusted before
 anyone relies on it.
 
+The judge also measures the agent's review-and-fix step. With it on, the judge passes 25 of 60
+generated scenarios; with it off, 9 of 60. The judge never sees the lint rules the repair uses,
+so it is an independent check that the repair improves the tests and is not just satisfying its
+own linter. The cost is visible too: 65 model calls instead of 14.
+
 ## Architecture
 
 ```mermaid
 flowchart LR
     story[User story + acceptance criteria] --> gen[Requirements-to-Test agent]
+    gen -- lint flags a scenario --> fix[One repair round] --> gen
     fail[Failed test: error, stack, logs] --> rules{Triage rules}
     rules -- confident --> tri[Triage result]
     rules -- unsure --> trillm[Triage via LLM]
@@ -105,6 +114,12 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   a new case, the same way a bug becomes a unit test.
 - **Thresholds as a CI gate.** One file, [data/thresholds.yaml](data/thresholds.yaml), defines
   "good enough to merge". Zero-tolerance metrics (PHI leaks) are separate from statistical ones.
+- **Review and fix inside the agent, measured outside it.** Cheap regex lint (placeholder When,
+  vague Then, a negative tag on a normal path, a positive tag on an error path) flags scenarios,
+  and each flagged one goes back to the model once with the problems listed. A repair is kept
+  only if it is schema valid, still traces to the same criterion and has fewer problems. One round
+  bounds the cost. The judge, which is separate from the lint, grades the result with the repair
+  on and off.
 - **A judge is a model too.** The scenario judge answers four yes/no checks (tests the
   criterion, concrete When, observable Then, correct tag) instead of a 1-10 score, because binary
   checks are easier to label and calibrate. The verdict is computed from the checks, never taken

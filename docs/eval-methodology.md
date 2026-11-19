@@ -27,6 +27,10 @@ mean, and how to extend them.
 | expected_scenario_recall | reviewer-expected scenarios found / expected. Found = same criterion, all keywords present, and for negative or edge expectations the matching tag |
 | layer_accuracy | found scenarios on the expected test layer / found |
 | risk_checklist_gaps | stories that mention SMS, phone or language but lack an opt-out, invalid-phone or unsupported-language scenario |
+| lint_flagged_rate | scenarios the lint flagged on the first draft / valid scenarios |
+| repair_success_rate | flagged scenarios whose one repair was accepted with no problems left / flagged scenarios |
+| lint_issue_rate | scenarios still failing lint after the repair round / valid scenarios |
+| model_calls | generation calls plus repair calls: the cost of the repair loop |
 
 ### Failure-Triage
 

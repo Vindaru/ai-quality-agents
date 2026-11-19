@@ -82,3 +82,12 @@ def test_safety_eval_catches_a_broken_guard(monkeypatch, disabled):
     monkeypatch.delitem(phi_guard.PHI_PATTERNS, disabled)
     metrics = runner.eval_safety(MockLLM(), DATA / "golden")["metrics"]
     assert metrics["phi_in_prompt_count"] > 0
+
+
+def test_repair_loop_improves_judged_quality_without_hurting_recall(results):
+    judge = results["suites"]["judge"]["metrics"]
+    assert judge["scenario_pass_rate"] > judge["scenario_pass_rate_without_repair"]
+    without = runner.eval_test_generator(MockLLM(), DATA / "golden", repair=False)["metrics"]
+    with_repair = results["suites"]["test_generator"]["metrics"]
+    assert with_repair["expected_scenario_recall"] >= without["expected_scenario_recall"]
+    assert with_repair["lint_issue_rate"] < with_repair["lint_flagged_rate"]

@@ -31,7 +31,7 @@ def test_report_has_every_required_section(markdown):
 
 def test_report_names_the_model_and_gate_result(markdown):
     assert "mock-heuristic-v1" in markdown and "deterministic offline mock" in markdown
-    assert "**PASSED** (14/14 checks)" in markdown
+    assert "**PASSED** (16/16 checks)" in markdown
 
 
 def test_report_lists_three_to_five_examples(markdown):
