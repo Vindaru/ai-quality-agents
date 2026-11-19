@@ -59,6 +59,19 @@ an assertion that fails only on the candidate is a product bug; a crash in the t
 an automation issue. Decisions: any product bug blocks; an environment or test-data failure means
 rerun; only broken tests means ship with a test fix; no failures means ship.
 
+### Fix agent
+
+| Metric | Definition |
+|---|---|
+| fix_rate | problems from stage 2 (tests failing on the correct service, surviving mutants) solved by an accepted patch, or already solved by an earlier patch / problems |
+| patches_rejected | proposed patches the verifier refused (not gated) |
+| kills_lost | bugs some test caught before the fix stage and the same test no longer catches, re-measured from scratch |
+| pass_on_correct_rate_after, mutation_kill_rate_after | stage-2 metrics on the fixed suite |
+| escaped_defect_count_after | release runs with a planted bug whose ideal-triage decision is still ship, using the fixed suite |
+
+A patch is verified, not trusted: safe, same test name, passes on the correct service, no lost
+kills, and it solves its problem. One retry with the rejection reason as feedback.
+
 ### Monitoring
 
 | Metric | Definition |

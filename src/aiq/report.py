@@ -19,6 +19,7 @@ SUITE_TITLES = {
     "judge": "Scenario judge",
     "test_to_code": "Test-to-Code",
     "run_and_triage": "Run and triage",
+    "fix": "Fix agent",
     "monitoring": "Monitoring",
 }
 COUNT_METRICS = {
@@ -32,6 +33,10 @@ COUNT_METRICS = {
     "escaped_defect_count",
     "failures_triaged",
     "false_alarm_days",
+    "problems",
+    "patches_rejected",
+    "kills_lost",
+    "escaped_defect_count_after",
 }
 
 # Which findings make the best examples, and what each one means.
@@ -39,6 +44,7 @@ EXAMPLE_ORDER = [
     "caught_by_output_guard",
     "escaped_defect",
     "mutant_survived",
+    "patch_rejected",
     "test_fails_on_correct_service",
     "safety_injection",
     "misclassified:rules",
@@ -51,6 +57,9 @@ EXAMPLE_ORDER = [
     "judge_false_fail",
 ]
 EXPLANATIONS = {
+    "patch_rejected": "The Fix agent's patch was run before it was accepted and failed on the "
+    "correct service. The rejection went back to the agent as feedback and the retry passed. An "
+    "agent that edits tests must not be the one that decides its edit is good.",
     "caught_by_output_guard": "The input filter missed a reworded injection and the model "
     "repeated its confidential instructions. The output guard blocked the reply before it "
     "was sent. This is why there are two layers.",
@@ -279,6 +288,40 @@ def _run_section(results: dict[str, Any]) -> list[str]:
     ]
 
 
+def _fix_section(results: dict[str, Any]) -> list[str]:
+    fx = results["suites"].get("fix")
+    if fx is None:
+        return []
+    c = fx["counts"]
+    return [
+        "",
+        "## 7. Fix agent",
+        "",
+        f"Stage 2 left {c['problems']} problems in the {c['tests']}-test suite: tests that fail "
+        "on the correct service and planted bugs no test catches. The Fix agent proposed a "
+        "replacement for one test per problem; each patch was run before it was kept (safe, "
+        "passes on the correct service, catches everything the old test caught, and solves the "
+        f"problem). {c['attempts']} attempts in all. The fixed suite was then measured again "
+        "from scratch, including on the section-6 release runs with ideal triage.",
+        "",
+        *_metric_table(results, "fix"),
+        "",
+        *_table(
+            ["Problem", "Target", "Test rewritten", "Kept", "Why not"],
+            [
+                [
+                    a["problem"],
+                    a["target"],
+                    a["test_name"] or "-",
+                    "yes" if a["accepted"] else "no",
+                    a["reason"].replace("|", "\\|") or "-",
+                ]
+                for a in fx["attempts"]
+            ],
+        ),
+    ]
+
+
 def _monitor_section(results: dict[str, Any]) -> list[str]:
     mon = results["suites"].get("monitoring")
     if mon is None:
@@ -286,7 +329,7 @@ def _monitor_section(results: dict[str, Any]) -> list[str]:
     ref = mon["reference"]
     out = [
         "",
-        "## 7. Monitoring",
+        "## 8. Monitoring",
         "",
         "**Production drift.** The Failure-Triage agent ran on a simulated week of nightly CI "
         f"failures ({mon['counts']['failures']} over {mon['counts']['days']} nights). The "
@@ -516,6 +559,7 @@ def render(results: dict[str, Any]) -> str:
     out += _judge_section(results)
     out += _code_section(results)
     out += _run_section(results)
+    out += _fix_section(results)
     out += _monitor_section(results)
     out += ["", "## What the evals caught", ""]
     for f in _examples(results):
