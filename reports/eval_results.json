@@ -1,10 +1,10 @@
 {
   "run": {
-    "timestamp": "2026-11-19 15:25 UTC",
+    "timestamp": "2026-11-19 15:31 UTC",
     "model": "mock-heuristic-v1",
     "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "5024027",
+    "git_sha": "b8deab9",
     "python": "3.13.18"
   },
   "suites": {
@@ -553,6 +553,60 @@
         }
       ]
     },
+    "fix": {
+      "metrics": {
+        "problems": 3,
+        "fix_rate": 1.0,
+        "patches_rejected": 1,
+        "kills_lost": 0,
+        "pass_on_correct_rate_after": 1.0,
+        "mutation_kill_rate_after": 1.0,
+        "escaped_defect_count_after": 0,
+        "model_calls": 4
+      },
+      "counts": {
+        "tests": 11,
+        "problems": 3,
+        "attempts": 4
+      },
+      "attempts": [
+        {
+          "problem": "broken_test",
+          "target": "C05",
+          "test_name": "test_invalid_phone_rejected",
+          "accepted": true,
+          "reason": ""
+        },
+        {
+          "problem": "surviving_mutant",
+          "target": "stop_case_sensitive",
+          "test_name": "test_stop_with_spaces_opts_out",
+          "accepted": true,
+          "reason": ""
+        },
+        {
+          "problem": "surviving_mutant",
+          "target": "no_e164",
+          "test_name": "test_phone_normalised",
+          "accepted": false,
+          "reason": "the patched test fails on the correct service: assert client.get(\"/members/M-1\").json[\"phone\"] == \"+1 (555) 010-0199\" (line 4)"
+        },
+        {
+          "problem": "surviving_mutant",
+          "target": "no_e164",
+          "test_name": "test_phone_normalised",
+          "accepted": true,
+          "reason": ""
+        }
+      ],
+      "findings": [
+        {
+          "case": "no_e164",
+          "type": "patch_rejected",
+          "detail": "test_phone_normalised: the patched test fails on the correct service: assert client.get(\"/members/M-1\").json[\"phone\"] == \"+1 (555) 010-0199\" (line 4)"
+        }
+      ]
+    },
     "judge": {
       "metrics": {
         "agreement": 0.7188,
@@ -653,7 +707,7 @@
         "false_alarm_days": 0,
         "accuracy_on_normal_days": 0.7667,
         "accuracy_on_drift_days": 0.8,
-        "model_calls": 339,
+        "model_calls": 343,
         "invalid_output_rate": 0.0
       },
       "counts": {
@@ -812,6 +866,16 @@
           "invalid_json": 0,
           "prompt_versions": [
             "a140efafac74"
+          ]
+        },
+        "test_fix": {
+          "calls": 4,
+          "input_tokens": 6762,
+          "output_tokens": 303,
+          "errors": 0,
+          "invalid_json": 0,
+          "prompt_versions": [
+            "c00d8257741a"
           ]
         },
         "test_generation": {
@@ -1019,6 +1083,51 @@
       "passed": true
     },
     {
+      "suite": "fix",
+      "metric": "fix_rate",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "fix",
+      "metric": "kills_lost",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "fix",
+      "metric": "pass_on_correct_rate_after",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "fix",
+      "metric": "mutation_kill_rate_after",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "fix",
+      "metric": "escaped_defect_count_after",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
       "suite": "monitoring",
       "metric": "drift_day_recall",
       "value": 1.0,
@@ -1076,8 +1185,8 @@
   "judge_trusted": false,
   "history": {
     "previous": {
-      "timestamp": "2026-11-19 15:15 UTC",
-      "git_sha": "3242492",
+      "timestamp": "2026-11-19 15:25 UTC",
+      "git_sha": "5024027",
       "model": "mock-heuristic-v1",
       "metrics": {
         "test_generator": {
@@ -1110,42 +1219,21 @@
           "decision_accuracy": 1.0,
           "escaped_defect_count": 1
         },
+        "monitoring": {
+          "drift_day_recall": 1.0,
+          "false_alarm_days": 0,
+          "invalid_output_rate": 0.0
+        },
         "judge": {
           "judge_error_count": 0,
           "agreement": 0.7188,
           "cohen_kappa": 0.4462,
           "scenario_pass_rate": 0.4167
         }
-      },
-      "backfilled": true
+      }
     },
     "regressions": [],
     "recent": [
-      {
-        "timestamp": "2026-10-16 21:20 UTC",
-        "git_sha": "d3540bc",
-        "model": "mock-heuristic-v1",
-        "metrics": {
-          "test_generator": {
-            "schema_validity": 0.9836,
-            "criteria_coverage": 0.9815,
-            "traceability": 1.0,
-            "duplicate_rate": 0.0167,
-            "expected_scenario_recall": 0.8491
-          },
-          "triage": {
-            "accuracy": 0.8542,
-            "llm_routed_rate": 0.4375
-          },
-          "safety": {
-            "phi_leak_count": 0,
-            "phi_in_prompt_count": 0,
-            "injection_resistance": 1.0,
-            "refusal_correctness": 0.9643
-          }
-        },
-        "backfilled": true
-      },
       {
         "timestamp": "2026-11-19 14:50 UTC",
         "git_sha": "722b818",
@@ -1294,7 +1382,7 @@
         "backfilled": true
       },
       {
-        "timestamp": "2026-11-19 15:22 UTC",
+        "timestamp": "2026-11-19 15:25 UTC",
         "git_sha": "5024027",
         "model": "mock-heuristic-v1",
         "metrics": {
@@ -1342,7 +1430,9 @@
         }
       },
       {
-        "git_sha": "5024027",
+        "timestamp": "2026-11-19 15:31 UTC",
+        "git_sha": "b8deab9",
+        "model": "mock-heuristic-v1",
         "metrics": {
           "test_generator": {
             "schema_validity": 0.9836,
@@ -1373,6 +1463,66 @@
             "triage_accuracy": 1.0,
             "decision_accuracy": 1.0,
             "escaped_defect_count": 1
+          },
+          "fix": {
+            "fix_rate": 1.0,
+            "kills_lost": 0,
+            "pass_on_correct_rate_after": 1.0,
+            "mutation_kill_rate_after": 1.0,
+            "escaped_defect_count_after": 0
+          },
+          "monitoring": {
+            "drift_day_recall": 1.0,
+            "false_alarm_days": 0,
+            "invalid_output_rate": 0.0
+          },
+          "judge": {
+            "judge_error_count": 0,
+            "agreement": 0.7188,
+            "cohen_kappa": 0.4462,
+            "scenario_pass_rate": 0.4167
+          }
+        }
+      },
+      {
+        "git_sha": "b8deab9",
+        "metrics": {
+          "test_generator": {
+            "schema_validity": 0.9836,
+            "criteria_coverage": 0.9815,
+            "traceability": 1.0,
+            "duplicate_rate": 0.0167,
+            "expected_scenario_recall": 0.8679,
+            "lint_issue_rate": 0.4667,
+            "repair_success_rate": 0.451
+          },
+          "triage": {
+            "accuracy": 0.8542,
+            "llm_routed_rate": 0.4375
+          },
+          "safety": {
+            "phi_leak_count": 0,
+            "phi_in_prompt_count": 0,
+            "injection_resistance": 1.0,
+            "refusal_correctness": 0.9643
+          },
+          "test_to_code": {
+            "runnable_rate": 1.0,
+            "unsafe_code_count": 0,
+            "pass_on_correct_rate": 0.9091,
+            "mutation_kill_rate": 0.7778
+          },
+          "run_and_triage": {
+            "triage_accuracy": 1.0,
+            "decision_accuracy": 1.0,
+            "escaped_defect_count": 1
+          },
+          "fix": {
+            "fix_rate": 1.0,
+            "kills_lost": 0,
+            "pass_on_correct_rate_after": 1.0,
+            "mutation_kill_rate_after": 1.0,
+            "escaped_defect_count_after": 0
           },
           "monitoring": {
             "drift_day_recall": 1.0,
@@ -1418,6 +1568,13 @@
         "triage_accuracy": 1.0,
         "decision_accuracy": 1.0,
         "escaped_defect_count": 1
+      },
+      "fix": {
+        "fix_rate": 1.0,
+        "kills_lost": 0,
+        "pass_on_correct_rate_after": 1.0,
+        "mutation_kill_rate_after": 1.0,
+        "escaped_defect_count_after": 0
       },
       "monitoring": {
         "drift_day_recall": 1.0,

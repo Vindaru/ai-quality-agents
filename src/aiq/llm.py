@@ -501,3 +501,47 @@ def _mock_test_codegen(system: str, prompt: str) -> str:
     return json.dumps(
         {"test_name": "test_member_exists", "code": f"def test_member_exists(client):{body}\n"}
     )
+
+
+# The fix agent's mock: it reads the evidence the way a model would, and makes one realistic
+# mistake. Its first E.164 patch guesses a formatted phone number instead of reading the
+# contract; the verifier rejects it, and the retry (with the rejection as feedback) gets it right.
+_FIX_RULES: list[tuple[str, Callable[[str], bool], Callable[[str, str], str]]] = [
+    (
+        "r.status == 400",
+        lambda code: "r.status == 400" in code,
+        lambda code, feedback: (
+            code.replace("r.status == 400", "r.status == 422").rstrip()
+            + '\n    assert r.json["error"] == "phone_invalid"\n'
+        ),
+    ),
+    (
+        "upper-case STOP",
+        lambda code: '"STOP  "' in code,
+        lambda code, feedback: code.replace('"STOP  "', '"stop  "'),
+    ),
+    (
+        "E.164",
+        lambda code: "/phone" in code and "r.status == 200" in code,
+        lambda code, feedback: (
+            code.rstrip()
+            + '\n    assert client.get("/members/M-1").json["phone"] == '
+            + ('"+15550100199"' if feedback else '"+1 (555) 010-0199"')
+            + "\n"
+        ),
+    ),
+]
+
+
+@mock_behavior("test_fix")
+def _mock_test_fix(system: str, prompt: str) -> str:
+    data = input_payload(prompt)
+    evidence, tests, feedback = data["problem"]["evidence"], data["tests"], data["feedback"]
+    for clue, wanted, rewrite in _FIX_RULES:
+        target = next((t for t in tests if wanted(t["code"])), None)
+        if clue in evidence and target:
+            code = rewrite(target["code"], feedback)
+            return json.dumps({"test_name": target["test_name"], "code": code, "explanation": clue})
+    # Nothing it recognises: it hands back the first test unchanged, which fixes nothing.
+    first = tests[0]
+    return json.dumps({"test_name": first["test_name"], "code": first["code"], "explanation": "?"})

@@ -19,6 +19,7 @@ import yaml
 
 from aiq.agents.failure_triage import CATEGORIES, Failure, FailureTriageAgent, Triage
 from aiq.agents.outreach_assistant import CANARY, Member, OutreachAssistant
+from aiq.agents.test_fixer import SuiteTest, TestFixAgent, find_problems, score
 from aiq.agents.test_generator import RequirementsToTestAgent, Story, lint_scenario
 from aiq.agents.test_to_code import GeneratedTest, TestToCodeAgent, run_test
 from aiq.demo.referral_service import BUGS, ReferralService
@@ -585,6 +586,88 @@ def eval_judge(
     }
 
 
+# --- fix ----------------------------------------------------------------------------------
+
+
+def eval_fix(
+    llm: LLM, code_cases: list[dict[str, Any]], data_dir: Path = DATA / "golden"
+) -> dict[str, Any]:
+    """Stage 5: hand every broken test and every surviving mutant from stage 2 to the Fix agent,
+    keep only patches the verifier accepts, then measure the suite again: on the correct service,
+    against every mutant, and on the stage-3 release runs."""
+    criteria = {s["id"]: s["criterion"] for s in _load("test_to_code.yaml", data_dir)["scenarios"]}
+    suite = []
+    for c in code_cases:
+        if not c.get("code") or c.get("refused"):
+            continue
+        test = GeneratedTest(test_name=c["test_name"], code=c["code"])
+        passes, kills = score(test)
+        suite.append(SuiteTest(c["id"], criteria[c["id"]], test, kills, passes))
+    before = {t.test.test_name: set(t.kills) for t in suite}
+    problems = find_problems(suite)
+    agent = TestFixAgent(llm)
+    attempts, findings, fixed = [], [], 0
+    for problem in problems:
+        caught = set().union(*(t.kills for t in suite))
+        if problem.kind == "surviving_mutant" and problem.target in caught:
+            fixed += 1  # an earlier fix already catches it
+            continue
+        tries = agent.fix(problem, suite)
+        attempts += tries
+        fixed += tries[-1].accepted
+        for t in tries:
+            if not t.accepted:
+                findings.append(
+                    {
+                        "case": problem.target,
+                        "type": "patch_rejected",
+                        "detail": f"{t.test_name or 'no test'}: {t.reason}",
+                    }
+                )
+        if not tries[-1].accepted:
+            findings.append(
+                {"case": problem.target, "type": "fix_failed", "detail": problem.evidence}
+            )
+    # Re-measure from scratch rather than trusting the verifier's own bookkeeping.
+    rescored = {t.test.test_name: score(t.test) for t in suite}
+    caught_after = set().union(*(k for _, k in rescored.values()))
+    kills_lost = sum(len(before[name] - kills) for name, (_, kills) in rescored.items())
+    tests = [t.test for t in suite]
+    escaped = 0
+    for spec in _load("release_runs.yaml", data_dir)["runs"]:
+        failed = [r for r in execute(tests, spec["bug"], spec["fault"]) if r.outcome != "pass"]
+        decision = release_decision([r.expected_category for r in failed])
+        escaped += bool(spec["bug"]) and decision.startswith("ship")
+    metrics = {
+        "problems": len(problems),
+        "fix_rate": _ratio(fixed, len(problems)),
+        "patches_rejected": sum(not a.accepted for a in attempts),
+        "kills_lost": kills_lost,
+        "pass_on_correct_rate_after": _ratio(sum(p for p, _ in rescored.values()), len(suite)),
+        "mutation_kill_rate_after": _ratio(len(caught_after), len(BUGS)),
+        "escaped_defect_count_after": escaped,
+        "model_calls": agent.model_calls,
+    }
+    return {
+        "metrics": metrics,
+        "counts": {"tests": len(suite), "problems": len(problems), "attempts": len(attempts)},
+        "attempts": [
+            {
+                "problem": a.problem.kind,
+                "target": a.problem.target,
+                "test_name": a.test_name,
+                "accepted": a.accepted,
+                "reason": a.reason,
+            }
+            for a in attempts
+        ],
+        "findings": findings,
+        "cases": [
+            {"id": t.scenario_id, "test_name": t.test.test_name, "code": t.test.code} for t in suite
+        ],
+    }
+
+
 # --- monitoring ------------------------------------------------------------------------------
 
 
@@ -767,6 +850,7 @@ def run_all(
         "safety": eval_safety(provider, golden),
         "test_to_code": test_to_code,
         "run_and_triage": eval_run_and_triage(GuardedLLM(provider), test_to_code["cases"], golden),
+        "fix": eval_fix(GuardedLLM(provider), test_to_code["cases"], golden),
         "judge": eval_judge(
             GuardedLLM(judge_provider),
             test_generator["cases"],

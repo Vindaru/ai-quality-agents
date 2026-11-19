@@ -11,7 +11,8 @@ The **Test-to-Code** agent turns approved scenarios into runnable API tests for 
 referral service, and mutation testing checks that those tests actually catch bugs. Those
 tests then **run against release candidates** (some with planted bugs, some in a broken
 environment), the **Failure-Triage** agent sorts every failure, and the run ends in a release
-decision: ship, ship with a test fix, rerun, or block. A **monitor** traces every model call
+decision: ship, ship with a test fix, rerun, or block. A **Fix agent** repairs the broken tests
+and strengthens the weak ones, and every patch is run before it is kept. A **monitor** traces every model call
 and watches the triage agent on a simulated week of production failures for drift, without
 labels. The **Failure-Triage** agent sorts
 failed tests into product bug, automation issue, environment or test data. A third component, an
@@ -24,8 +25,8 @@ test. The domain is healthcare member outreach and referrals, and all data is sy
 
 ## Results at a glance
 
-From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:25 UTC,
-quality gate **passed, 26/26 checks**.
+From the latest committed run: model `mock-heuristic-v1` (the offline mock), 2026-11-19 15:31 UTC,
+quality gate **passed, 31/31 checks**.
 Full report with the confusion matrix, failure examples and limitations:
 [reports/eval_report.md](reports/eval_report.md).
 
@@ -43,10 +44,14 @@ Full report with the confusion matrix, failure examples and limitations:
 | Test-to-Code | unsafe_code_count | 0 | ≤ 0 |
 | Run and triage | triage_accuracy on 26 pipeline failures | 100.0% | ≥ 90.0% |
 | Run and triage | decision_accuracy (7 release runs) | 100.0% | ≥ 100.0% |
-| Run and triage | escaped_defect_count | 1 | ≤ 1, to ratchet to 0 |
+| Run and triage | escaped_defect_count, suite as generated | 1 | ≤ 1 |
+| Fix agent | problems fixed (1 broken test, 2 surviving mutants) | 3 of 3 | 100% |
+| Fix agent | mutation_kill_rate after the fix | 100.0% (was 77.8%) | ≥ 100.0% |
+| Fix agent | escaped_defect_count after the fix | 0 | ≤ 0 |
+| Fix agent | kills_lost (a patch that weakened a test) | 0 | ≤ 0 |
 | Monitoring | drift nights alerted (new failure pattern x2, bad deploy) | 3 of 3 | 100% |
 | Monitoring | false alarms on normal nights | 0 of 3 | ≤ 0 |
-| Monitoring | invalid model output, over 339 traced calls | 0.0% | ≤ 2.0% |
+| Monitoring | invalid model output, over 343 traced calls | 0.0% | ≤ 2.0% |
 | Failure-Triage | accuracy | 85.4% | ≥ 80.0% |
 | Failure-Triage | accuracy 95% CI | 72.8% to 92.8% | not gated |
 | Failure-Triage | llm_routed_rate | 43.8% | ≤ 50.0% |
@@ -80,7 +85,9 @@ are not.
 
 In the run-and-triage stage every decision was right, and a bugged build still shipped: the
 E.164 regression produced no failing test, so there was nothing to triage. Triage quality
-cannot make up for a missing test, which is why stage 2 measures mutation kills.
+cannot make up for a missing test, which is why stage 2 measures mutation kills. The Fix agent
+then closes that gap: it strengthens the E.164 test, its first patch is rejected because it
+fails on the correct service, the retry is kept, and with the fixed suite no bugged build ships.
 
 ## Architecture
 
@@ -115,6 +122,9 @@ flowchart LR
     scorers --> report[reports/eval_report.md]
     llm -. one span per call .-> traces[(Traces: tokens, prompt version, errors)]
     prod[Nightly failures, no labels] --> rules
+    svc -- broken tests, surviving mutants --> fixer[Fix agent] -- patch --> verify{Run it: safe, passes, no lost kills, solves it}
+    verify -- rejected, with reason --> fixer
+    verify -- kept --> code
     tri --> mon{Drift monitor vs golden-set profile} --> review[Alert + review queue]
     gate --> hist[(Run history)] -- worse than last run? --> report
 ```
@@ -166,6 +176,11 @@ model, `pip install -e ".[anthropic]"`, then set `AIQ_LLM_PROVIDER=anthropic` an
   it was injected: a planted bug, a broken environment, or a test that also fails on the known-good
   baseline. Triage is scored against that, and its labels are turned into a release decision so
   a triage mistake shows up as what it costs (a regression retried instead of blocked).
+- **The fixer does not grade its own fix.** A patch replaces one existing test and is kept only
+  if it passes the safety check, passes on the correct service, still catches every bug the old
+  test caught, and solves its problem (a repaired test must catch something; a strengthened test
+  must catch the surviving bug). A rejection goes back once as feedback. Test code passes
+  through the PHI guard like any prompt; redacted values are restored locally after the call.
 - **Monitor behaviour when there are no labels.** Production failures arrive unlabeled, so
   accuracy cannot be tracked nightly. The monitor tracks what can be seen instead: how often the
   rules could not decide, how often the model was unsure, and the category mix (population
@@ -203,7 +218,7 @@ More detail on metric definitions and how to extend the sets:
 
 ```
 src/aiq/llm.py                    LLM interface, deterministic mock, optional real provider, PHI-guarded wrapper
-src/aiq/agents/                   test_generator, test_to_code, failure_triage, outreach_assistant
+src/aiq/agents/                   test_generator, test_to_code, test_fixer, failure_triage, outreach_assistant
 src/aiq/execution.py              stage 3: run a suite on a release candidate, build Failure records, release decision
 src/aiq/tracing.py                stage 4: OpenTelemetry GenAI-style spans for every model call
 src/aiq/monitor.py                stage 4: label-free drift signals, PSI, alerts, run-to-run regressions
@@ -227,8 +242,6 @@ data/thresholds.yaml              the quality gate, including the judge's trust 
 This repo is growing into an end-to-end pipeline: requirements → test cases → code → run and
 triage → monitor → fix. Next stages, one PR each:
 
-- **Fix:** a Fix agent that patches automation failures and weak tests (the two surviving
-  mutants), keeping a patch only if it passes on the correct service and kills more mutants.
 - **Orchestrate:** one command that runs the whole chain with human approval points and writes a
   release-readiness report.
 
