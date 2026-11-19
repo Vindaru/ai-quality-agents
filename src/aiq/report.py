@@ -20,6 +20,7 @@ SUITE_TITLES = {
     "test_to_code": "Test-to-Code",
     "run_and_triage": "Run and triage",
     "fix": "Fix agent",
+    "pipeline": "Pipeline",
     "monitoring": "Monitoring",
 }
 COUNT_METRICS = {
@@ -35,6 +36,8 @@ COUNT_METRICS = {
     "false_alarm_days",
     "problems",
     "patches_rejected",
+    "unapproved_ships",
+    "scenarios_pending_without_approvals",
     "kills_lost",
     "escaped_defect_count_after",
 }
@@ -322,6 +325,43 @@ def _fix_section(results: dict[str, Any]) -> list[str]:
     ]
 
 
+def _pipeline_section(results: dict[str, Any]) -> list[str]:
+    pl = results["suites"].get("pipeline")
+    if pl is None:
+        return []
+    c, before, after = pl["counts"], pl["suite"]["before"], pl["suite"]["after"]
+    return [
+        "",
+        "## 8. End-to-end pipeline",
+        "",
+        "`python -m aiq.pipeline run` chains every agent: requirements to scenarios, scenario "
+        "approval, code, evaluation, fixes, run and triage, release sign-off. On the three stories "
+        f"the demo service implements: {c['scenarios']} scenarios, {c['approved']} approved "
+        f"({c['rejected']} rejected by the reviewer), {c['tests']} tests. The suite caught "
+        f"{before['mutants_caught']} of {before['mutants']} planted bugs as generated and "
+        f"{after['mutants_caught']} of {after['mutants']} after the Fix agent. Then every "
+        "release candidate went through run, triage and decision. The same chain with no human "
+        "decisions must stop before writing code, and a ship decision must wait for sign-off.",
+        "",
+        *_metric_table(results, "pipeline"),
+        "",
+        *_table(
+            ["Candidate", "Planted bug", "Environment", "Decision", "Expected", "Status"],
+            [
+                [
+                    r["id"],
+                    r["bug"] or "none",
+                    r["fault"] or "healthy",
+                    r["decision"],
+                    r["expected_decision"],
+                    r["status"] + (f" ({r['signed_off_by']})" if r["signed_off_by"] else ""),
+                ]
+                for r in pl["runs"]
+            ],
+        ),
+    ]
+
+
 def _monitor_section(results: dict[str, Any]) -> list[str]:
     mon = results["suites"].get("monitoring")
     if mon is None:
@@ -329,7 +369,7 @@ def _monitor_section(results: dict[str, Any]) -> list[str]:
     ref = mon["reference"]
     out = [
         "",
-        "## 8. Monitoring",
+        "## 9. Monitoring",
         "",
         "**Production drift.** The Failure-Triage agent ran on a simulated week of nightly CI "
         f"failures ({mon['counts']['failures']} over {mon['counts']['days']} nights). The "
@@ -560,6 +600,7 @@ def render(results: dict[str, Any]) -> str:
     out += _code_section(results)
     out += _run_section(results)
     out += _fix_section(results)
+    out += _pipeline_section(results)
     out += _monitor_section(results)
     out += ["", "## What the evals caught", ""]
     for f in _examples(results):

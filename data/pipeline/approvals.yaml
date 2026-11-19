@@ -1,0 +1,13 @@
+# Human decisions the pipeline waits for (src/aiq/pipeline.py). In real use a reviewer edits
+# this file (or a PR review, or a ticket) after reading the pending list the pipeline writes.
+# These are the decisions a reviewer made on the demo stories; they are part of the eval set.
+reviewer: qa-lead
+scenarios:
+  # Scenarios the lint still flags after the repair round are never auto-approved.
+  US-01/AC2/1: {decision: approve, note: "When step is vague, but the Then (409 opted_out) is checkable"}
+  US-01/AC4/1: {decision: approve, note: "covers trailing spaces; lower case is left to the mutation check"}
+  US-04/AC2/1: {decision: approve, note: "E.164 normalisation"}
+  US-04/AC4/1: {decision: reject, note: "admin page message is a UI check; belongs in the UI suite, not the API suite"}
+release:
+  # Shipping always needs a person. Block and rerun never do: they are the safe direction.
+  R1: {decision: ship, note: "clean candidate, all gates green"}

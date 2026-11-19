@@ -1,10 +1,10 @@
 {
   "run": {
-    "timestamp": "2026-11-19 15:31 UTC",
+    "timestamp": "2026-11-19 15:46 UTC",
     "model": "mock-heuristic-v1",
     "judge_model": "mock-heuristic-v1",
     "offline_mock": true,
-    "git_sha": "b8deab9",
+    "git_sha": "2627d59",
     "python": "3.13.18"
   },
   "suites": {
@@ -607,6 +607,107 @@
         }
       ]
     },
+    "pipeline": {
+      "metrics": {
+        "decision_accuracy": 1.0,
+        "escaped_defect_count": 0,
+        "unapproved_ships": 0,
+        "approval_gates_enforced": 1.0,
+        "scenarios_pending_without_approvals": 4
+      },
+      "counts": {
+        "scenarios": 12,
+        "approved": 11,
+        "rejected": 1,
+        "tests": 11,
+        "runs": 7
+      },
+      "suite": {
+        "before": {
+          "tests": 11,
+          "pass_on_correct": 10,
+          "mutants_caught": 7,
+          "mutants": 9,
+          "survivors": [
+            "no_e164",
+            "stop_case_sensitive"
+          ]
+        },
+        "after": {
+          "tests": 11,
+          "pass_on_correct": 11,
+          "mutants_caught": 9,
+          "mutants": 9,
+          "survivors": []
+        }
+      },
+      "runs": [
+        {
+          "id": "R1",
+          "bug": null,
+          "fault": null,
+          "decision": "ship",
+          "expected_decision": "ship",
+          "status": "shipped",
+          "signed_off_by": "qa-lead"
+        },
+        {
+          "id": "R2",
+          "bug": "unknown_referral_200",
+          "fault": null,
+          "decision": "block",
+          "expected_decision": "block",
+          "status": "blocked",
+          "signed_off_by": ""
+        },
+        {
+          "id": "R3",
+          "bug": "no_consent_audit",
+          "fault": null,
+          "decision": "block",
+          "expected_decision": "block",
+          "status": "blocked",
+          "signed_off_by": ""
+        },
+        {
+          "id": "R4",
+          "bug": "expired_token_accepted",
+          "fault": null,
+          "decision": "block",
+          "expected_decision": "block",
+          "status": "blocked",
+          "signed_off_by": ""
+        },
+        {
+          "id": "R5",
+          "bug": null,
+          "fault": "gateway_down",
+          "decision": "rerun",
+          "expected_decision": "rerun",
+          "status": "rerun",
+          "signed_off_by": ""
+        },
+        {
+          "id": "R6",
+          "bug": null,
+          "fault": "seed_missing",
+          "decision": "rerun",
+          "expected_decision": "rerun",
+          "status": "rerun",
+          "signed_off_by": ""
+        },
+        {
+          "id": "R7",
+          "bug": "no_e164",
+          "fault": null,
+          "decision": "block",
+          "expected_decision": "block",
+          "status": "blocked",
+          "signed_off_by": ""
+        }
+      ],
+      "findings": []
+    },
     "judge": {
       "metrics": {
         "agreement": 0.7188,
@@ -707,7 +808,7 @@
         "false_alarm_days": 0,
         "accuracy_on_normal_days": 0.7667,
         "accuracy_on_drift_days": 0.8,
-        "model_calls": 343,
+        "model_calls": 416,
         "invalid_output_rate": 0.0
       },
       "counts": {
@@ -829,9 +930,9 @@
       "findings": [],
       "tracing": {
         "failure_triage": {
-          "calls": 58,
-          "input_tokens": 8272,
-          "output_tokens": 1097,
+          "calls": 62,
+          "input_tokens": 8853,
+          "output_tokens": 1169,
           "errors": 0,
           "invalid_json": 0,
           "prompt_versions": [
@@ -859,9 +960,9 @@
           ]
         },
         "test_codegen": {
-          "calls": 11,
-          "input_tokens": 6497,
-          "output_tokens": 797,
+          "calls": 33,
+          "input_tokens": 20259,
+          "output_tokens": 2391,
           "errors": 0,
           "invalid_json": 0,
           "prompt_versions": [
@@ -869,9 +970,9 @@
           ]
         },
         "test_fix": {
-          "calls": 4,
-          "input_tokens": 6762,
-          "output_tokens": 303,
+          "calls": 12,
+          "input_tokens": 20286,
+          "output_tokens": 909,
           "errors": 0,
           "invalid_json": 0,
           "prompt_versions": [
@@ -879,9 +980,9 @@
           ]
         },
         "test_generation": {
-          "calls": 28,
-          "input_tokens": 12686,
-          "output_tokens": 11466,
+          "calls": 37,
+          "input_tokens": 16793,
+          "output_tokens": 14742,
           "errors": 0,
           "invalid_json": 0,
           "prompt_versions": [
@@ -889,9 +990,9 @@
           ]
         },
         "test_repair": {
-          "calls": 51,
-          "input_tokens": 11836,
-          "output_tokens": 4701,
+          "calls": 81,
+          "input_tokens": 18688,
+          "output_tokens": 7350,
           "errors": 0,
           "invalid_json": 0,
           "prompt_versions": [
@@ -1128,6 +1229,42 @@
       "passed": true
     },
     {
+      "suite": "pipeline",
+      "metric": "decision_accuracy",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
+      "suite": "pipeline",
+      "metric": "escaped_defect_count",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "pipeline",
+      "metric": "unapproved_ships",
+      "value": 0,
+      "bound": {
+        "max": 0
+      },
+      "passed": true
+    },
+    {
+      "suite": "pipeline",
+      "metric": "approval_gates_enforced",
+      "value": 1.0,
+      "bound": {
+        "min": 1.0
+      },
+      "passed": true
+    },
+    {
       "suite": "monitoring",
       "metric": "drift_day_recall",
       "value": 1.0,
@@ -1185,8 +1322,8 @@
   "judge_trusted": false,
   "history": {
     "previous": {
-      "timestamp": "2026-11-19 15:25 UTC",
-      "git_sha": "5024027",
+      "timestamp": "2026-11-19 15:31 UTC",
+      "git_sha": "b8deab9",
       "model": "mock-heuristic-v1",
       "metrics": {
         "test_generator": {
@@ -1218,6 +1355,13 @@
           "triage_accuracy": 1.0,
           "decision_accuracy": 1.0,
           "escaped_defect_count": 1
+        },
+        "fix": {
+          "fix_rate": 1.0,
+          "kills_lost": 0,
+          "pass_on_correct_rate_after": 1.0,
+          "mutation_kill_rate_after": 1.0,
+          "escaped_defect_count_after": 0
         },
         "monitoring": {
           "drift_day_recall": 1.0,
@@ -1485,7 +1629,7 @@
         }
       },
       {
-        "git_sha": "b8deab9",
+        "git_sha": "2627d59",
         "metrics": {
           "test_generator": {
             "schema_validity": 0.9836,
@@ -1523,6 +1667,12 @@
             "pass_on_correct_rate_after": 1.0,
             "mutation_kill_rate_after": 1.0,
             "escaped_defect_count_after": 0
+          },
+          "pipeline": {
+            "decision_accuracy": 1.0,
+            "escaped_defect_count": 0,
+            "unapproved_ships": 0,
+            "approval_gates_enforced": 1.0
           },
           "monitoring": {
             "drift_day_recall": 1.0,
@@ -1575,6 +1725,12 @@
         "pass_on_correct_rate_after": 1.0,
         "mutation_kill_rate_after": 1.0,
         "escaped_defect_count_after": 0
+      },
+      "pipeline": {
+        "decision_accuracy": 1.0,
+        "escaped_defect_count": 0,
+        "unapproved_ships": 0,
+        "approval_gates_enforced": 1.0
       },
       "monitoring": {
         "drift_day_recall": 1.0,

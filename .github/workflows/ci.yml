@@ -42,9 +42,14 @@ jobs:
       - name: Quality gate
         run: python -m aiq.evals.runner gate
 
+      - name: End-to-end pipeline on the clean candidate
+        run: python -m aiq.pipeline run --candidate R1
+
       - name: Publish report to the job summary
         if: always()
-        run: cat reports/eval_report.md >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          cat reports/release_readiness.md >> "$GITHUB_STEP_SUMMARY" || true
+          cat reports/eval_report.md >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Secret scan (gitleaks)
         run: |
